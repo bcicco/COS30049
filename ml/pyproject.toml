@@ -46,6 +46,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aivhuman"]
+# Ships the py.typed marker so mypy will actually type-check the installed
+# package. Without it mypy silently skips aivhuman entirely.
+artifacts = ["src/aivhuman/py.typed"]
 
 [tool.ruff]
 line-length = 100
@@ -67,3 +70,9 @@ markers = ["network: hits real corpora over the network; excluded from CI"]
 python_version = "3.13"
 packages = ["aivhuman"]
 strict = true
+
+# pysbd (last released 2021) and tokenizers ship no type stubs. Silencing them
+# per-module keeps `strict` meaningful for our own code.
+[[tool.mypy.overrides]]
+module = ["pysbd.*", "tokenizers.*"]
+ignore_missing_imports = true

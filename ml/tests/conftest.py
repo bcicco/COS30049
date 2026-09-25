@@ -1,15 +1,4 @@
-"""Shared fixtures.
-
-Unit tests run offline against synthetic fixtures that reproduce each corpus
-format exactly. Synthetic rather than sampled, for two reasons: committing real
-corpus rows raises a redistribution question, and a synthetic fixture can be
-*built* to contain the pathological case (a combining mark straddling the
-SeqXGPT boundary, a ``cnn_human_para`` src, an embedded newline inside a quoted
-CSV field) rather than hoping a sampled row happens to.
-
-Anything that touches the network is marked ``@pytest.mark.network`` and excluded
-by default, so CI needs no token, no data and no egress.
-"""
+"""Shared fixtures."""
 
 from __future__ import annotations
 

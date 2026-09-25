@@ -4,7 +4,6 @@
 # I did a big deep dive into unicode normalisation and different forms, NFC, NFD, NFKC, NFKD
 # and the various ways they can break offsets. NFC is the way to go, will explain why in the report
 
-
 from __future__ import annotations
 
 import hashlib

@@ -4,7 +4,6 @@
 # clean = False is MANDATORY (prevent rewrite)
 # char_span = True is MANDATORY (return offsets, not strings)
 
-
 from __future__ import annotations
 
 import re
@@ -104,9 +103,7 @@ class Segmenter(BaseModel):
     def model_post_init(self, _context: Any, /) -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SyntaxWarning)
-            self._seg = pysbd.Segmenter(
-                language=self.language, clean=False, char_span=True
-            )
+            self._seg = pysbd.Segmenter(language=self.language, clean=False, char_span=True)
 
     def segment(self, text: str) -> list[tuple[int, int]]:
         """Return ordered, non-overlapping ``(start, end)`` pairs."""
@@ -133,7 +130,7 @@ class Segmenter(BaseModel):
     def _collect(self, text: str, offset: int, end_limit: int) -> list[tuple[int, int]]:
         """Run PySBD over ``text[offset:end_limit]`` and return absolute spans."""
         chunk = text[offset:end_limit]
-        raw = self._seg.segment(chunk)  # type: ignore[attr-defined]
+        raw = self._seg.segment(chunk)
         spans: list[tuple[int, int]] = []
         cursor = 0
         for ts in raw:
@@ -150,9 +147,7 @@ class Segmenter(BaseModel):
             spans.append((trimmed[0] + offset, trimmed[1] + offset))
         return spans
 
-    def _fill_gaps(
-        self, text: str, spans: list[tuple[int, int]]
-    ) -> list[tuple[int, int]]:
+    def _fill_gaps(self, text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
         """Recover text PySBD omitted entirely. Essay incoming, apologies....
 
         pysbd 0.3.4 does not always cover its input. On an arXiv abstract
@@ -193,9 +188,7 @@ class Segmenter(BaseModel):
             cursor = max(cursor, end)
         return filled
 
-    def _close_gaps(
-        self, text: str, spans: list[tuple[int, int]]
-    ) -> list[tuple[int, int]]:
+    def _close_gaps(self, text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
         """Normalise to a guaranteed partition: ordered, disjoint, fully covering."""
 
         # The single top man #1 MVP authoritative pass. The only one whose output the rest of
@@ -217,9 +210,7 @@ class Segmenter(BaseModel):
             cursor = clipped[1]
         return closed
 
-    def _anchor(
-        self, text: str, ts: object, cursor: int
-    ) -> tuple[int, int] | tuple[None, None]:
+    def _anchor(self, text: str, ts: object, cursor: int) -> tuple[int, int] | tuple[None, None]:
         """Verify PySBD's offsets, re-anchoring them if they do not round-trip."""
         sent: str = ts.sent  # type: ignore[attr-defined]
         start: int = ts.start  # type: ignore[attr-defined]

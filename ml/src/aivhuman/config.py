@@ -5,7 +5,6 @@
 # for debugging on Windows
 # Especially when corpora contains em-dashes, which we all know AI loves to do.
 
-
 from __future__ import annotations
 
 import os
@@ -31,9 +30,7 @@ ML_ROOT: Final = Path(__file__).resolve().parents[2]
 
 load_dotenv(ML_ROOT / ".env")
 
-DATA_ROOT: Final = Path(
-    os.environ.get("AIVHUMAN_DATA_ROOT") or ML_ROOT / "data"
-).resolve()
+DATA_ROOT: Final = Path(os.environ.get("AIVHUMAN_DATA_ROOT") or ML_ROOT / "data").resolve()
 RAW_DIR: Final = DATA_ROOT / "raw"
 INTERIM_DIR: Final = DATA_ROOT / "interim"
 PROCESSED_DIR: Final = DATA_ROOT / "processed" / "phase1"

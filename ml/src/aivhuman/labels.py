@@ -212,9 +212,7 @@ def parse_src(src: str) -> ParsedSrc:
 # --------------------------------------------------------------------------- #
 
 #: ``gpt3re`` is the upstream spelling for the GPT-3 re-generation variant.
-SEQXGPT_GENERATORS: Final = frozenset(
-    {"gpt2", "gptneo", "gptj", "llama", "gpt3re", "human"}
-)
+SEQXGPT_GENERATORS: Final = frozenset({"gpt2", "gptneo", "gptj", "llama", "gpt3re", "human"})
 
 
 def seqxgpt_doc_label(raw: str, boundary: int, length: int) -> int:

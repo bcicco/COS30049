@@ -1,6 +1,7 @@
 """Token counting with the exact encoder Phase 4 will use.
 
-Counts come from ``answerdotai/ModernBERT-base``'s tokenizer, but this may need to be updated further down the track.
+Counts come from ``answerdotai/ModernBERT-base``'s tokenizer, but this may
+need to be updated further down the track.
 """
 
 from __future__ import annotations
