@@ -88,7 +88,8 @@ class SentenceSpan(BaseModel):
     label: Label | None = None
     """Sentence provenance where it is *known* (likely to be SeqXGPT only for sentence calib.) """
     # ***** IMPORTANT *******
-    # The model is multiple-instance precisely because sentence labels are unavailable at training time
+    # The model is multiple-instance precisely because sentence labels are
+    # unavailable at training time
     # Dont leak them in here
 
     machine_char_frac: Annotated[float, Field(ge=0.0, le=1.0)] | None = None

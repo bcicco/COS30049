@@ -1,7 +1,8 @@
 """Paths, environment resolution, and console encoding."""
 
 # *** IMPORTANT ***
-# The stdout reconfig. may look like overkill, but it makes life much easier for debugging on Windows
+# The stdout reconfig. may look like overkill, but it makes life much easier
+# for debugging on Windows
 # Especially when corpora contains em-dashes, which we all know AI loves to do.
 
 

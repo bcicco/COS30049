@@ -26,7 +26,8 @@ def fetch_hf_file(
 
     # ************* Note **************
     # Retries on transport errors because they occured in testing
-    #  Each retry resumes from the partial ``.incomplete`` file, so a drop  doesn't cost the whole transfer
+    #  Each retry resumes from the partial ``.incomplete`` file, so a drop
+    #  doesn't cost the whole transfer
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, attempts + 1):
