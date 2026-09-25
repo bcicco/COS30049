@@ -1,10 +1,4 @@
-"""Label polarity and src parsing — the regression suite for Phase 1's worst bug.
-
-A flipped label does not crash. It produces a model that trains, converges and
-scores plausibly while learning the inverse of the task. These tests are the
-cheapest available insurance against that, and the MAGE inversion in particular
-is pinned twice: once by rule and once by a real src string.
-"""
+"""Label polarity and src parsing — the regression suite for Phase 1's worst bug."""
 
 from __future__ import annotations
 
