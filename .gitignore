@@ -8,5 +8,19 @@ wheels/
 # Virtual environments
 .venv
 .env
-# .gitignore
+# Data (corpora, checkpoints, HF cache) never committed.
+# **IMPORTANT** : ml/reports/ and ml/manifests/ are deliverables and live OUTSIDE data/ so
+# they stay tracked. Do not add a global *.jsonl rule -- it would swallow
+# ml/tests/fixtures/.
 **/data/
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+# ML artifacts
+*.parquet
+*.pt
+*.safetensors
+checkpoints/
+.ipynb_checkpoints/
