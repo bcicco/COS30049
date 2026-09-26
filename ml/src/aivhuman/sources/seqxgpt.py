@@ -1,7 +1,5 @@
 """SeqXGPT: the only source with sentence-level provenance."""
 
-from __future__ import annotations
-
 import json
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -17,20 +15,10 @@ from aivhuman.text.segment import Segmenter, n_words
 from aivhuman.text.style import detect_style
 from aivhuman.text.tokens import count_tokens
 
-__all__ = [
-    "MACHINE_CHAR_THRESHOLD",
-    "RawRecord",
-    "SeqXGPTStats",
-    "assign_sentence_labels",
-    "build_docs",
-    "load_records",
-]
-
-
 MACHINE_CHAR_THRESHOLD: Final = 0.5
 
 # Maps a file stem to the generator it holds, as a cross-check on the per-record
-# ``label`` field rather than a replacement for it.
+# label field.  *** IS NOT a replacement for it. ***
 FILE_GENERATOR: Final = {
     "en_gpt2_lines": "gpt2",
     "en_gpt3_lines": "gpt3re",
@@ -104,7 +92,7 @@ class SeqXGPTStats(BaseModel):
 
 
 def load_records(directory: Path) -> list[RawRecord]:
-    """Read every JSONL in ``directory`` in sorted filename order."""
+    """Read every JSONL in `directory` in sorted filename order."""
     out: list[RawRecord] = []
     for path in sorted(directory.glob("*.jsonl")):
         for i, line in enumerate(path.open(encoding="utf-8")):
@@ -129,33 +117,34 @@ def assign_sentence_labels(
 ) -> list[tuple[int, float, bool]]:
     """Label each span by how much of it sits past the human/machine boundary.
 
-    Returns ``[(label, machine_char_frac, straddles), ...]``.
+    Returns [(label, machine_char_frac, straddles), ...]."""
 
-    The majority-character rule is a choice, and ``straddles`` exists so it does
-    not have to be a silent one. SeqXGPT's boundary is a *sentence* boundary by
-    construction, so a straddling span means our segmenter disagrees with the one
-    upstream used ----> a segmentation artifact, not genuinely mixed authorship.
-    Phase 7 can therefore exclude straddlers from strict precision and recall and
-    say how many it excluded, rather than folding disagreements into the score.
-    """
+    # ------------------------------- NOTE ------------------------------------
+    # I don't love the way I did this. Done mmy best to explain my reasoning below,
+    # but is convoluted an a bit confusing. Still useful but should revisit at some point
+
+    # -------------------------------- EXPLANATION -----------------------------
+
+    # The majority-character rule is a choice, and straddles exists so it does
+    # not have to be a silent. SeqXGPT's boundary is a *sentence* boundary by
+    # construction, so a straddling span means our segmenter disagrees with the one
+    # upstream used ----> a segmentation artifact, not genuinely mixed authorship.
+    # Phase 7 can therefore exclude straddlers from strict precision and recall and
+    # say how many it excluded, rather than folding disagreements into the score.
+
     out: list[tuple[int, float, bool]] = []
     for start, end in spans:
         width = end - start
         overlap = max(0, end - max(start, boundary))
         frac = overlap / width if width else 0.0
+        # messssyyyyy
         label = LABEL_MACHINE if frac >= MACHINE_CHAR_THRESHOLD else LABEL_HUMAN
         out.append((label, frac, 0.0 < frac < 1.0))
     return out
 
 
 def _boundary_snap_dist(spans: Sequence[tuple[int, int]], boundary: int) -> int:
-    """Distance from the boundary to the nearest sentence edge.
-
-    Answers a question Phase 7 depends on and nobody thought to ask: does
-    ``prompt_len`` actually land on sentence boundaries? A median of 0 means the
-    ground truth is clean. A median of 30 characters means SeqXGPT's transitions
-    are mid-sentence and "per-sentence provenance" is an approximation.
-    """
+    """Distance from the boundary to the nearest sentence edge."""
     if not spans:
         return 0
     edges = [spans[0][0]] + [e for _s, e in spans]
@@ -169,14 +158,16 @@ def build_docs(
     segmenter: Segmenter | None = None,
     stats: SeqXGPTStats | None = None,
 ) -> Iterator[Doc]:
-    """Normalise a SeqXGPT directory into :class:`Doc` objects."""
+    """Normalise a SeqXGPT directory into class Doc objects."""
     seg = segmenter or Segmenter()
     st = stats if stats is not None else SeqXGPTStats()
 
     records = load_records(directory)
     st.records = len(records)
 
-    assignment = recover_seqxgpt_groups([(r.file_stem, r.text, r.prompt_len) for r in records])
+    assignment = recover_seqxgpt_groups(
+        [(r.file_stem, r.text, r.prompt_len) for r in records]
+    )
 
     for rec, group_id in zip(records, assignment.group_ids, strict=True):
         expected = FILE_GENERATOR.get(rec.file_stem)
