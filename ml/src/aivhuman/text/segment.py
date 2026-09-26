@@ -4,8 +4,6 @@
 # clean = False is MANDATORY (prevent rewrite)
 # char_span = True is MANDATORY (return offsets, not strings)
 
-from __future__ import annotations
-
 import re
 import warnings
 from typing import Any
@@ -25,9 +23,37 @@ with warnings.catch_warnings():
     import pysbd
     from pysbd.languages import LANGUAGE_CODES
 
-__all__ = ["SegmentStats", "Segmenter", "n_words"]
-
 _WORD_RE = re.compile(r"\S+")
+
+# ***************** IMPORTANT ******************
+# THIS WAS FROM A RUN IN TESTING, SUCH A HEADACHE TO RESOLVE, CAN SKIP IF YOU WANT
+# pysbd hangs on one specific case , and a RAID document
+# contains it.TLDR; process stuck for 8 mins on a big abstract.
+# faulthandler put the stack in processor.replace_periods_before_numeric_references
+# whose NUMBERED_REFERENCE_REGEX backtracks exponentially.
+#
+# Bisected to a 50-character reproducer:
+#
+#     "des.[126 127 128 129 130 131 132 133 134 135 136 1"   -> never returns
+#     "des.[126 127 128 129 130 131 132 133 134 135] Next." -> 10 ms
+#     "des.[126 127 12"                                      -> 10 ms
+#     "des. 126 127 128 129 130 131 132 133 134 135 136 1"   -> 6 ms
+#
+# So it needs all three of: a sentence terminator, an opening bracket, and
+# roughly six or more space separated numbers after it.
+# Why is this appearing in the docs? Citation lists!!!!
+# Length alone is not the trigger --> long word runs, long number
+# runs all segment in milliseconds.
+
+# Measured incidence: 3 documents in 467,985 clean RAID rows, 0 in MAGE's
+# 436,606. Those three bypass pysbd entirely for a plain regex split, which is
+# a small quality loss we can live with :))))
+_NUMERIC_REF_DANGER = re.compile(r"[.!?]\s*\[\s*(?:\d{1,4}[\s,;-]+){6,}")
+
+# Fallback boundaries: after a sentence terminator, or at a newline. pysbd
+# splits on bare newlines too, so this is the same rule minus the abbreviation
+# handling that is the only thing being given up.
+_FALLBACK_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
 def n_words(s: str) -> int:
@@ -36,7 +62,7 @@ def n_words(s: str) -> int:
 
 
 class SegmentStats(BaseModel):
-    """Segmentation health, published in the Phase 1 report."""
+    """Segmentation health (see /reports)"""
 
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
@@ -51,6 +77,7 @@ class SegmentStats(BaseModel):
     dropped_empty_spans: NonNegativeInt = 0
     recovered_gap_spans: NonNegativeInt = 0
     unsegmentable_gaps: NonNegativeInt = 0
+    numeric_ref_fallbacks: NonNegativeInt = 0
 
     @property
     def spans_per_doc(self) -> float:
@@ -75,16 +102,15 @@ class SegmentStats(BaseModel):
 
 
 class Segmenter(BaseModel):
-    """Wraps PySBD and asserts what PySBD does not.
-
-    Not thread-safe and expensive to construct, so build one per process (see
-    the ``initializer=`` argument used by the ingest worker pool).
-    """
+    """Wraps PySBD and asserts what PySBD does not. Just Validation"""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     language: str = "en"
     stats: SegmentStats = Field(default_factory=SegmentStats)
+
+    use_pysbd: bool = True
+    """When false, split by regex only."""
 
     # private bc nothing. to val, its machinery
     _seg: Any = PrivateAttr(default=None)
@@ -103,10 +129,12 @@ class Segmenter(BaseModel):
     def model_post_init(self, _context: Any, /) -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SyntaxWarning)
-            self._seg = pysbd.Segmenter(language=self.language, clean=False, char_span=True)
+            self._seg = pysbd.Segmenter(
+                language=self.language, clean=False, char_span=True
+            )
 
     def segment(self, text: str) -> list[tuple[int, int]]:
-        """Return ordered, non-overlapping ``(start, end)`` pairs."""
+        """Return ordered, non-overlapping `(start, end)` pairs."""
         self.stats.docs += 1
         if not text.strip():
             self.stats.empty_docs += 1
@@ -128,7 +156,34 @@ class Segmenter(BaseModel):
         return spans
 
     def _collect(self, text: str, offset: int, end_limit: int) -> list[tuple[int, int]]:
-        """Run PySBD over ``text[offset:end_limit]`` and return absolute spans."""
+        """Segment text[offset:end_limit], avoiding pysbd where it would hang."""
+        if not self.use_pysbd:
+            return self._fallback_split(text, offset, end_limit)
+        if _NUMERIC_REF_DANGER.search(text, offset, end_limit):
+            self.stats.numeric_ref_fallbacks += 1
+            return self._fallback_split(text, offset, end_limit)
+        return self._segment_chunk(text, offset, end_limit)
+
+    def _fallback_split(
+        self, text: str, offset: int, end_limit: int
+    ) -> list[tuple[int, int]]:
+        """Split without pysbd, for the chunks pysbd cannot survive."""
+        spans: list[tuple[int, int]] = []
+        start = offset
+        for match in _FALLBACK_BOUNDARY_RE.finditer(text, offset, end_limit):
+            trimmed = _trim(text, start, match.end())
+            if trimmed is not None:
+                spans.append(trimmed)
+            start = match.end()
+        trimmed = _trim(text, start, end_limit)
+        if trimmed is not None:
+            spans.append(trimmed)
+        return spans
+
+    def _segment_chunk(
+        self, text: str, offset: int, end_limit: int
+    ) -> list[tuple[int, int]]:
+        """Run PySBD over one window and return absolute spans."""
         chunk = text[offset:end_limit]
         raw = self._seg.segment(chunk)
         spans: list[tuple[int, int]] = []
@@ -147,33 +202,30 @@ class Segmenter(BaseModel):
             spans.append((trimmed[0] + offset, trimmed[1] + offset))
         return spans
 
-    def _fill_gaps(self, text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    def _fill_gaps(
+        self, text: str, spans: list[tuple[int, int]]
+    ) -> list[tuple[int, int]]:
         """Recover text PySBD omitted entirely. Essay incoming, apologies....
 
-        pysbd 0.3.4 does not always cover its input. On an arXiv abstract
-        containing ``@xmath0`` placeholders, unicode symbols (a solar-mass sign
-        and a true minus sign) and an inline citation, it returned six spans
-        whose offsets jump
-        558 -> 857 and 1026 -> 1142, dropping 413 characters. Every span it
-        returned round-tripped perfectly, so neither the offset check nor the
-        anchor-repair path sees this.....only coverage accounting does.
+        pysbd does not always cover its input. On test run, an arxiv abstract
+        containing @xmath0 placeholders, unicode symbols and an inline citation, it returned six spans
+        whose offsets jump 558 -> 857 and 1026 -> 1142..... dropping 413 characters... :(
+        Every span it returned round tripped perfectly, so neither the offset check OR the
+        anchor repair path sees this.....only coverage accounting does....
 
-        Dropped text is not cosmetic. Those characters would be excluded from
-        every sentence score, so the interface would render a region of the
-        document as unscored with no indication why, and the document score
-        would be computed over less text than the user submitted.
+        Dropped text is not good. Those characters would be excluded from
+        every sentence score.
 
         Recovery re-runs PySBD on the gap in isolation, which usually succeeds
         because the context that confused it is gone. If it still comes back
-        short, the gap is emitted as a single span: an imperfectly-bounded
-        sentence is a far smaller problem than a silently unscored one.
+        short, the gap is emitted as a single span.
         """
         filled: list[tuple[int, int]] = []
         cursor = 0
         for start, end in [*spans, (len(text), len(text))]:
             if text[cursor:start].strip():
                 # Recovered spans are clipped to the gap, so monotonicity holds
-                # by construction and no second enforcement pass is needed --
+                # by construction and no second enforcement pass is needed
                 # one was previously dropping the very spans added here.
                 recovered = [
                     (a, b)
@@ -188,7 +240,9 @@ class Segmenter(BaseModel):
             cursor = max(cursor, end)
         return filled
 
-    def _close_gaps(self, text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    def _close_gaps(
+        self, text: str, spans: list[tuple[int, int]]
+    ) -> list[tuple[int, int]]:
         """Normalise to a guaranteed partition: ordered, disjoint, fully covering."""
 
         # The single top man #1 MVP authoritative pass. The only one whose output the rest of
@@ -210,7 +264,9 @@ class Segmenter(BaseModel):
             cursor = clipped[1]
         return closed
 
-    def _anchor(self, text: str, ts: object, cursor: int) -> tuple[int, int] | tuple[None, None]:
+    def _anchor(
+        self, text: str, ts: object, cursor: int
+    ) -> tuple[int, int] | tuple[None, None]:
         """Verify PySBD's offsets, re-anchoring them if they do not round-trip."""
         sent: str = ts.sent  # type: ignore[attr-defined]
         start: int = ts.start  # type: ignore[attr-defined]

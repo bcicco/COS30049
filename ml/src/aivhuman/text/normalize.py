@@ -4,26 +4,10 @@
 # I did a big deep dive into unicode normalisation and different forms, NFC, NFD, NFKC, NFKD
 # and the various ways they can break offsets. NFC is the way to go, will explain why in the report
 
-from __future__ import annotations
-
 import hashlib
 import re
 import unicodedata
 from typing import NamedTuple
-
-__all__ = [
-    "MAX_BOUNDARY_RETRACT",
-    "CompositionStraddlesBoundary",
-    "NfcSplit",
-    "collapse_ws",
-    "content_key",
-    "is_nfc",
-    "nfc",
-    "nfc_split",
-    "stable_hash",
-    "strip_moses_spacing",
-    "text_key",
-]
 
 # How far the boundary may be retracted to find a safe cut point before we give
 # up and quarantine the record. Will explain further in report
@@ -40,14 +24,14 @@ _SPACED_HYPHEN_RE = re.compile(r"(?<=\w) - (?=\w)")
 class CompositionStraddlesBoundary(ValueError):
     """A boundary offset cannot be carried through NFC without corrupting it."""
 
-    # Raised by :func:`nfc_split` when no safe cut point exists nearby.
+    # Raised by nfc_split when no safe cut point exists nearby, makes life easier to debug
 
 
 class NfcSplit(NamedTuple):
     """Result of carrying a pre-NFC offset through normalisation."""
 
     text: str
-    """The NFC-normalised string. Guaranteed equal to ``nfc(original)``."""
+    """The NFC-normalised string. Guaranteed equal to `nfc(original)`."""
 
     cut: int
     """Boundary offset into :attr:`text`. Marks the same logical position."""
@@ -65,15 +49,15 @@ def nfc(s: str) -> str:
 
 
 def is_nfc(s: str) -> bool:
-    """True if ``s`` is already NFC-normalised."""
+    """True if `s` is already NFC-normalised."""
     return unicodedata.is_normalized("NFC", s)
 
 
 def nfc_split(s: str, cut: int) -> NfcSplit:
-    """NFC-normalise ``s`` while carrying the pre-NFC offset ``cut`` through."""
+    """NFC-normalise `s` while carrying the pre-NFC offset `cut` through."""
 
     # ************* NOTE **************
-    # This is tricky... specific to SeqXGPT's prompt_lenbecause its offset into the raw string
+    # This is tricky... specific to SeqXGPT's prompt_len because its offset into the raw string
     # and NFC can shorten a string. Can't just normalise and reuse the offset
     # instead, split first, normalise each side, then check two halves = whole
 
@@ -116,7 +100,7 @@ def collapse_ws(s: str) -> str:
 
 
 def strip_moses_spacing(s: str) -> str:
-    """Undo Moses-style detokenisation spacing: ``"disease ."`` -> ``"disease."``"""
+    """Undo Moses-style detokenisation spacing: `"disease ."` -> `"disease."`"""
     s = _SPACED_HYPHEN_RE.sub("-", s)
     s = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", s)
     return _SPACE_AFTER_OPEN_RE.sub(r"\1", s)
@@ -139,7 +123,12 @@ def content_key(s: str, n_chars: int) -> str:
 
 
 def stable_hash(s: str, n: int = 16) -> str:
-    """Process-stable hex digest. Use this, never the builtin ``hash()``."""
+    """Process-stable hex digest. Use this, never the builtin `hash()`."""
+
+    # ************* NOTE **************
+    # Do not use the built in hash bc/ hash will change across runs & processes, if we need to modify / rerun
+    # some things it will be a nightmare to track down what changed.
+
     if not 1 <= n <= 32:
         raise ValueError(f"n must be in [1, 32], got {n}")
     return hashlib.blake2b(s.encode("utf-8"), digest_size=16).hexdigest()[:n]

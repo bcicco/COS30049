@@ -1,6 +1,4 @@
-"""The one normalised schema every corpus converts into."""
-
-from __future__ import annotations
+"""Normalised data format for all sources"""
 
 import unicodedata
 from collections.abc import Iterator
@@ -13,27 +11,9 @@ from pydantic import (
     ConfigDict,
     Field,
     ValidationError,
-    field_serializer,
     model_serializer,
     model_validator,
 )
-
-__all__ = [
-    "LABEL_HUMAN",
-    "LABEL_MACHINE",
-    "LABEL_NAMES",
-    "SOURCES",
-    "SPLIT_ROLES",
-    "TRAINABLE_ROLES",
-    "Doc",
-    "SchemaError",
-    "SentenceSpan",
-    "doc_from_json",
-    "doc_to_json",
-    "iter_jsonl",
-    "label_name",
-    "validate_doc",
-]
 
 LABEL_HUMAN: Final = 0
 LABEL_MACHINE: Final = 1
@@ -41,7 +21,7 @@ LABEL_NAMES: Final = {LABEL_HUMAN: "human", LABEL_MACHINE: "machine"}
 
 SOURCES: Final = frozenset({"raid", "mage", "seqxgpt"})
 
-
+# note ood = out of domain
 SPLIT_ROLES: Final = frozenset(
     {
         "train_pool",  # RAID train.csv, attack == "none"
@@ -56,6 +36,8 @@ SPLIT_ROLES: Final = frozenset(
 TRAINABLE_ROLES: Final = frozenset({"train_pool"})
 
 Label = Annotated[int, Field(ge=0, le=1)]
+
+# sentences stored as character offsets into the parent Doc.text, which is NFC-normalised, Offset used to denote this
 Offset = Annotated[int, Field(ge=0)]
 
 
@@ -77,7 +59,7 @@ class SentenceSpan(BaseModel):
     start: Offset
 
     end: Offset
-    """**Exclusive** character offset. ``text[start:end]`` is the sentence."""
+    """character offset. `text[start:end]` is the sentence."""
 
     n_tokens: Annotated[int, Field(ge=0)]
     """Not confirmed, likely to be ModernBERT-base tokens"""
@@ -89,14 +71,13 @@ class SentenceSpan(BaseModel):
     """Sentence provenance where it is *known* (likely to be SeqXGPT only for sentence calib.) """
     # ***** IMPORTANT *******
     # The model is multiple-instance precisely because sentence labels are
-    # unavailable at training time
-    # Dont leak them in here
+    # unavailable at training time we need to make sure not to leak them here
 
     machine_char_frac: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
-    """Fraction of this span's characters on the machine side of the boundary."""
+    """Fraction of this span's characters on the machine side of the boundary, used to denote bizzare parsing."""
 
     straddles_boundary: bool = False
-    """True when this span contains both human and machine characters. """
+    """True when this span contains both human and machine characters, see above ^^"""
 
     # ***** IMPORTANT *******
     # For SeqGXPT, the boundary will be a sentence boundary, so straddle means:
@@ -108,11 +89,9 @@ class SentenceSpan(BaseModel):
             raise ValueError(f"span ({self.start}, {self.end}) is empty or inverted")
         return self
 
-    def to_dict(self) -> dict[str, Any]:
+    @model_serializer
+    def _serialise(self) -> dict[str, Any]:
         """Serialise, omitting the optional keys at their defaults."""
-        # *** NOTE ***
-        # Deterministic, and it keeps RAID's ~500k x ~20 spans to four keys apiece
-        # instead of seven.
         out: dict[str, Any] = {
             "start": self.start,
             "end": self.end,
@@ -127,10 +106,6 @@ class SentenceSpan(BaseModel):
             out["straddles_boundary"] = True
         return out
 
-    @model_serializer
-    def _serialise(self) -> dict[str, Any]:
-        return self.to_dict()
-
 
 class Doc(BaseModel):
     """A document with its sentence spans, normalised across all three corpora."""
@@ -138,16 +113,16 @@ class Doc(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     doc_id: str = Field(min_length=1)
-    """ {source}:{local_id} ---- Globally unique across all three corpora."""
+    """ {source}:{local_id} Globally unique across all three corpora."""
 
     text: str
     """NFC-normalised document text. Verbatim in every other respect."""
 
     label: Label
-    """Canonical polarity: [see final: datatypes] data:`LABEL_HUMAN` or :data:`LABEL_MACHINE`."""
+    """Canonical polarity: [see final: datatypes]"""
 
     source: str
-    """One of :data:`SOURCES`."""
+    """One of data SOURCES."""
 
     domain: str | None
     """Genre/corpus of origin. None for SeqXGPT (records no domain)."""
@@ -159,7 +134,7 @@ class Doc(BaseModel):
     """Leak-free grouping unit. No group_id may span two Phase 2 splits."""
 
     split_role: str
-    """One of :data:`SPLIT_ROLES`."""
+    """One of data SPLIT_ROLES."""
 
     sentences: list[SentenceSpan]
     """Ordered, non-overlapping spans covering every non-whitespace character."""
@@ -172,10 +147,6 @@ class Doc(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
     """Per-source provenance, can be dropped"""
 
-    @field_serializer("sentences")
-    def _serialise_sentences(self, spans: list[SentenceSpan]) -> list[dict[str, Any]]:
-        return [s.to_dict() for s in spans]
-
     @model_validator(mode="after")
     def _check_enums_and_ids(self) -> Self:
         if self.source not in SOURCES:
@@ -186,7 +157,11 @@ class Doc(BaseModel):
             raise ValueError(f"doc_id {self.doc_id!r} lacks the {self.source!r} prefix")
         if not self.group_id.startswith(f"{self.source}:"):
             raise ValueError(f"group_id {self.group_id!r} lacks the source prefix")
-        if self.label == LABEL_HUMAN and self.generator is not None and self.source != "mage":
+        if (
+            self.label == LABEL_HUMAN
+            and self.generator is not None
+            and self.source != "mage"
+        ):
             # MAGE's paraphrase testbed labels paraphrased human text as machine,
             # so it is the only case where a human doc has a generator name.
             raise ValueError(f"human doc names generator {self.generator!r}")
@@ -211,7 +186,9 @@ class Doc(BaseModel):
             if s.end > n:
                 raise ValueError(f"span {i} ends at {s.end}, past text length {n}")
             if s.start < prev_end:
-                raise ValueError(f"span {i} starts {s.start} before previous end {prev_end}")
+                raise ValueError(
+                    f"span {i} starts {s.start} before previous end {prev_end}"
+                )
             gap = self.text[prev_end : s.start]
             if gap.strip():
                 raise ValueError(f"non-whitespace gap before span {i}: {gap!r}")

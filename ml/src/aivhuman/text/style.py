@@ -1,7 +1,7 @@
-"""Detect how a document was preprocessed before it reached us.
+"""Detect how a document was preprocessed before it reached the pipeline. Bit confusing.
 
 SeqXGPT need to be heterogeneously detokenised. Documents sourced from XSum and CNN are
-natural-cased::
+natural-cased, e.g....:
 
     "Media playback is unsupported on your device 21 June 2013 Last updated ..."
 
@@ -11,12 +11,8 @@ punctuation::
     "... pathogenesis of autoimmune disease . in this study , we investigated ..."
 """
 
-from __future__ import annotations
-
 import re
 from typing import Final, NamedTuple
-
-__all__ = ["STYLES", "StyleInfo", "detect_style"]
 
 STYLES: Final = ("natural", "moses_lower", "moses_cased", "lower_natural", "unknown")
 
@@ -26,13 +22,13 @@ _SENT_PUNCT_RE = re.compile(r"[,.;:!?]")
 # " ," / " ." -- punctuation preceded by a space, the Moses detokenisation tell.
 _SPACED_PUNCT_RE = re.compile(r"\s[,.;:!?]")
 
-#: Below this fraction of letters being uppercase, treat the text as lowercased.
-#: Natural English prose runs ~2-5% uppercase; fully lowercased text runs ~0%.
+# Below this fraction of letters being uppercase, treat the text as lowercased.
+# Natural English prose runs ~2-5% uppercase; fully lowercased text runs ~0%.
 _LOWER_THRESHOLD: Final = 0.005
-#: Above this fraction of sentence punctuation being space-preceded, treat the
-#: text as Moses-detokenised. Natural prose is ~0; Moses output is ~1.
+# Above this fraction of sentence punctuation being space-preceded, treat the
+# text as Moses-detokenised. Natural prose is ~0; Moses output is ~1.
 _SPACED_THRESHOLD: Final = 0.30
-#: Ratios are meaningless on very short strings.
+# Ratios are meaningless on very short strings.
 _MIN_LETTERS: Final = 40
 _MIN_PUNCT: Final = 3
 
@@ -48,18 +44,7 @@ class StyleInfo(NamedTuple):
 def detect_style(text: str) -> StyleInfo:
     """Classify a document's casing and detokenisation.
 
-    Returns one of :data:`STYLES`:
-
-    ``natural``
-        Mixed case, punctuation attached. RAID, MAGE, SeqXGPT's XSum/CNN.
-    ``moses_lower``
-        Lowercased with spaced punctuation. SeqXGPT's PubMed/arXiv.
-    ``moses_cased``
-        Spaced punctuation but case preserved.
-    ``lower_natural``
-        Lowercased but punctuation attached.
-    ``unknown``
-        Too short to judge.
+    Returns one of STYLES:
     """
     letters = _LETTER_RE.findall(text)
     punct = _SENT_PUNCT_RE.findall(text)

@@ -1,12 +1,10 @@
 """Group ids that keep related documents on the same side of a split.
 
-- RAID: ``source_id`` identifies the human original.
+- RAID: `source_id` identifies the human original.
 - MAGE: no source identifier exists, so each document is its own group.
 - SeqXGPT: no base-document field exists; groups are recovered from shared
   human prefixes (prompts)
 """
-
-from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Sequence
@@ -16,27 +14,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from aivhuman.text.normalize import content_key, stable_hash, text_key
 
-__all__ = [
-    "MIN_LINK_CHARS",
-    "MIN_PREFIX_CHARS",
-    "PREFIX_CHARS",
-    "GroupAssignment",
-    "GroupStats",
-    "mage_group_id",
-    "raid_group_id",
-    "recover_seqxgpt_groups",
-]
-
 # Maximum prefix length used as a grouping key. Fixed-length keys either
-# fuse distinct documents that share boilerplate openings (short keys) or run
-# past short human prefix prompts (long keys), so each key uses as much of the
+# fuse distinct documents that share  short keys or run
+# past long keys, so each key uses as much of the
 # record's human prefix as exists, up to this cap.
 PREFIX_CHARS: Final = 200
 
-# Measured with fixed-length keys: 40 chars gives 99.3% recovery but 224
+# Measured with fixed-length keys. 40 chars gives 99.3% recovery but 224
 # same-file collisions; 120 chars gives 20 collisions but 93% recovery.
 
-# Minimum key length; shorter keys are too generic to identify a document.
+# Minimum key length... shorter keys are too generic to identify a document.
 MIN_PREFIX_CHARS: Final = 16
 
 # Minimum shared prefix length required to link two keys.
@@ -92,7 +79,7 @@ class GroupStats(BaseModel):
 
         Requires >=95% multi-file recovery and a same-file collision rate of at
         most 0.1%. The collision bar is a rate rather than zero because SeqXGPT
-        contains a small number of genuine duplicate base documents.
+        contains a small number of genuine duplicate base documents based on exploration.
         """
         return self.multi_file_frac >= 0.95 and self.collision_rate <= 0.001
 
@@ -113,13 +100,11 @@ def recover_seqxgpt_groups(
 ) -> GroupAssignment:
     """Recover the base document each SeqXGPT record derives from."""
     # ************* IMPORTANT *************************************
-    # ``records`` is ``[(file_stem, text, prompt_len), ...]``; ``prompt_len`` is
-    # ``None`` for fully human records.
+    # `records` is `[(file_stem, text, prompt_len), ...]`; `prompt_len` is
+    # `None` for fully human records.
 
     # SeqXGPT records carry no identifier --> row indices are not aligned across
-    # files AND ``prompt_len`` varies by generator for the same base.
-    # Each record is  keyed on its own human prefix (capped at ``prefix_chars``),
-    # and keys where one is a prefix of another are merged with union-find.
+    # files AND `prompt_len` varies by generator for the same base.
 
     n = len(records)
     stats = GroupStats(n_records=n, prefix_chars=prefix_chars)
@@ -151,7 +136,7 @@ def recover_seqxgpt_groups(
         parent[rb] = ra
         return True
 
-    # Sorting places each key directly before its extensions; the stack tracks
+    # Sorting places each key directly before its extensions the stack tracks
     # the current chain of prefixes so one pass links them all.
     stack: list[str] = []
     for key in unique:
