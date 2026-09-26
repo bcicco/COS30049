@@ -1,0 +1,12 @@
+kind,subject,expected,measured,consequence
+contradiction,RAID class balance,unstated,"34:1 machine:human, 13,371 human documents",83% accuracy floor is below the 97.1% base rate; report TPR at fixed FPR
+contradiction,MAGE domains,10,"14 (cnn, dialogsum, imdb, pubmed are extra)",the four extras appear only in the OOD testbeds
+contradiction,MAGE polarity,unstated,inverted: 1 is human,flipped labels
+contradiction,MAGE paraphrase set,all paraphrased,"1,600 paraphrased plus 762 originals","filter on meta[""is_paraphrased""]"
+contradiction,RAID test split,usable,unlabeled leaderboard split,train/dev and raid-ood both come out of train.csv
+contradiction,SeqXGPT base ids,assumed present,"absent, recovered at 99.4%",grouping is reconstructed from human prefixes
+contradiction,pysbd,assumed total,"drops text, and hangs on 3 RAID documents",coverage is enforced; hangs are bounded by a task timeout
+contradiction,SeqXGPT structure,mixed text,exactly one human-to-machine transition per document,CRF and Span-IoU results do not transfer to alternately edited text
+gap,non-native English writing,,not identified in any corpus,false positive rate on that group cannot be measured
+gap,generator recency,,all corpora built with 2023-24 generators,results are a lower bound on difficulty against current models
+gap,document token counts,,"sum over spans, excluding inter-sentence whitespace",slight undercount; safe for context-limit checks

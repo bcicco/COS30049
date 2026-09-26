@@ -23,6 +23,7 @@ PROCESSED_DIR: Final = DATA_ROOT / "processed" / "phase1"
 HF_DIR: Final = DATA_ROOT / "hf"
 
 REPORTS_DIR: Final = ML_ROOT / "reports" / "phase1"
+SPLITS_REPORT: Final = ML_ROOT / "reports" / "phase2" / "phase2_splits.json"
 MANIFESTS_DIR: Final = ML_ROOT / "manifests"
 
 

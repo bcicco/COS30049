@@ -1,0 +1,205 @@
+{
+  "held_out_generators": [
+    "cohere",
+    "cohere-chat"
+  ],
+  "held_out_domains": [
+    "reviews",
+    "wiki"
+  ],
+  "ood_fraction": 0.1,
+  "dev_fraction": 0.1,
+  "calib_fraction": 0.5,
+  "docs": {
+    "train": 266042,
+    "dev": 29388,
+    "raid-ood": 134435,
+    "mage-x": 432979,
+    "mage-para": 2362,
+    "seqxgpt-calib": 17909,
+    "seqxgpt-test": 17995
+  },
+  "groups": {
+    "train": 8582,
+    "dev": 948,
+    "raid-ood": 3841,
+    "mage-x": 432826,
+    "mage-para": 2362,
+    "seqxgpt-calib": 3092,
+    "seqxgpt-test": 3129
+  },
+  "human": {
+    "train": 8582,
+    "dev": 948,
+    "raid-ood": 3841,
+    "mage-x": 150355,
+    "mage-para": 762,
+    "seqxgpt-calib": 3169,
+    "seqxgpt-test": 3199
+  },
+  "machine": {
+    "train": 257460,
+    "dev": 28440,
+    "raid-ood": 130594,
+    "mage-x": 282624,
+    "mage-para": 1600,
+    "seqxgpt-calib": 14740,
+    "seqxgpt-test": 14796
+  },
+  "domains": {
+    "train": {
+      "abstracts": 43989,
+      "books": 44857,
+      "news": 44361,
+      "poetry": 43679,
+      "recipes": 44082,
+      "reddit": 45074
+    },
+    "dev": {
+      "abstracts": 4619,
+      "books": 4991,
+      "news": 5239,
+      "poetry": 4898,
+      "recipes": 5363,
+      "reddit": 4278
+    },
+    "raid-ood": {
+      "abstracts": 6930,
+      "books": 6055,
+      "news": 6300,
+      "poetry": 7140,
+      "recipes": 6195,
+      "reddit": 6545,
+      "reviews": 33005,
+      "wiki": 62265
+    },
+    "mage-x": {
+      "cmv": 34461,
+      "cnn": 200,
+      "dialogsum": 200,
+      "eli5": 54915,
+      "hswag": 40276,
+      "imdb": 200,
+      "pubmed": 200,
+      "roct": 41726,
+      "sci_gen": 32743,
+      "squad": 45294,
+      "tldr": 32572,
+      "wp": 43609,
+      "xsum": 43807,
+      "yelp": 62776
+    },
+    "mage-para": {
+      "cnn": 600,
+      "dialogsum": 562,
+      "imdb": 600,
+      "pubmed": 600
+    },
+    "seqxgpt-calib": {
+      "None": 17909
+    },
+    "seqxgpt-test": {
+      "None": 17995
+    }
+  },
+  "generators": {
+    "train": {
+      "chatgpt": 17164,
+      "gpt2": 34328,
+      "gpt3": 17164,
+      "gpt4": 17164,
+      "human": 8582,
+      "llama-chat": 34328,
+      "mistral": 34328,
+      "mistral-chat": 34328,
+      "mpt": 34328,
+      "mpt-chat": 34328
+    },
+    "dev": {
+      "chatgpt": 1896,
+      "gpt2": 3792,
+      "gpt3": 1896,
+      "gpt4": 1896,
+      "human": 948,
+      "llama-chat": 3792,
+      "mistral": 3792,
+      "mistral-chat": 3792,
+      "mpt": 3792,
+      "mpt-chat": 3792
+    },
+    "raid-ood": {
+      "chatgpt": 7682,
+      "cohere": 7682,
+      "cohere-chat": 7682,
+      "gpt2": 15364,
+      "gpt3": 7682,
+      "gpt4": 7682,
+      "human": 3841,
+      "llama-chat": 15364,
+      "mistral": 15364,
+      "mistral-chat": 15364,
+      "mpt": 15364,
+      "mpt-chat": 15364
+    },
+    "mage-x": {
+      "13B": 9290,
+      "30B": 9351,
+      "65B": 9335,
+      "7B": 9278,
+      "GLM130B": 9182,
+      "bloom_7b": 8818,
+      "flan_t5_base": 9454,
+      "flan_t5_large": 9394,
+      "flan_t5_small": 9382,
+      "flan_t5_xl": 9170,
+      "flan_t5_xxl": 9319,
+      "gpt-3.5-trubo": 22679,
+      "gpt4": 800,
+      "gpt_j": 7588,
+      "gpt_neox": 6839,
+      "human": 150355,
+      "opt_1.3b": 9202,
+      "opt_125m": 8849,
+      "opt_13b": 8126,
+      "opt_2.7b": 9161,
+      "opt_30b": 8971,
+      "opt_350m": 8775,
+      "opt_6.7b": 8858,
+      "opt_iml_30b": 9157,
+      "opt_iml_max_1.3b": 9330,
+      "t0_11b": 8930,
+      "t0_3b": 9452,
+      "text-davinci-002": 21842,
+      "text-davinci-003": 22092
+    },
+    "mage-para": {
+      "gpt4": 800,
+      "human": 1562
+    },
+    "seqxgpt-calib": {
+      "gpt2": 2920,
+      "gpt3re": 2993,
+      "gptj": 2962,
+      "gptneo": 2962,
+      "human": 3169,
+      "llama": 2903
+    },
+    "seqxgpt-test": {
+      "gpt2": 2891,
+      "gpt3re": 3007,
+      "gptj": 2984,
+      "gptneo": 2981,
+      "human": 3199,
+      "llama": 2933
+    }
+  },
+  "dropped": {
+    "raid_held_out_generator": 38120,
+    "mage_shared_with_other_corpus": 503,
+    "mage_x_shared_with_para": 762
+  },
+  "merged_groups": {
+    "raid": 281,
+    "seqxgpt": 0
+  }
+}

@@ -1,0 +1,457 @@
+{
+  "corpora": [
+    {
+      "source": "mage",
+      "docs": 436606,
+      "spans": 5270321,
+      "groups": 435687,
+      "human_docs": 152382,
+      "machine_docs": 284224,
+      "human_frac": 0.349,
+      "machine_per_human": 1.87,
+      "by_split_role": {
+        "xcorpus_ood_test": 1562,
+        "xcorpus_para_test": 2362,
+        "xcorpus_test": 432682
+      },
+      "by_domain": {
+        "cmv": 34461,
+        "cnn": 1000,
+        "dialogsum": 924,
+        "eli5": 54915,
+        "hswag": 40276,
+        "imdb": 1000,
+        "pubmed": 1000,
+        "roct": 41726,
+        "sci_gen": 32759,
+        "squad": 45763,
+        "tldr": 32572,
+        "wp": 43609,
+        "xsum": 43825,
+        "yelp": 62776
+      },
+      "by_generator": {
+        "13B": 9290,
+        "30B": 9351,
+        "65B": 9335,
+        "7B": 9278,
+        "GLM130B": 9182,
+        "bloom_7b": 8818,
+        "flan_t5_base": 9454,
+        "flan_t5_large": 9394,
+        "flan_t5_small": 9382,
+        "flan_t5_xl": 9170,
+        "flan_t5_xxl": 9319,
+        "gpt-3.5-trubo": 22679,
+        "gpt4": 1600,
+        "gpt_j": 7588,
+        "gpt_neox": 6839,
+        "human": 153182,
+        "opt_1.3b": 9202,
+        "opt_125m": 8849,
+        "opt_13b": 8126,
+        "opt_2.7b": 9161,
+        "opt_30b": 8971,
+        "opt_350m": 8775,
+        "opt_6.7b": 8858,
+        "opt_iml_30b": 9157,
+        "opt_iml_max_1.3b": 9330,
+        "t0_11b": 8930,
+        "t0_3b": 9452,
+        "text-davinci-002": 21842,
+        "text-davinci-003": 22092
+      },
+      "by_style": {
+        "lower_natural": 2046,
+        "moses_cased": 450,
+        "moses_lower": 18,
+        "natural": 411236,
+        "unknown": 22856
+      },
+      "style_by_label": {
+        "lower_natural": {
+          "human": 596,
+          "machine": 1450
+        },
+        "moses_cased": {
+          "human": 207,
+          "machine": 243
+        },
+        "moses_lower": {
+          "human": 1,
+          "machine": 17
+        },
+        "natural": {
+          "human": 143882,
+          "machine": 267354
+        },
+        "unknown": {
+          "human": 7696,
+          "machine": 15160
+        }
+      },
+      "span_length_buckets": {
+        "0-15": 2038505,
+        "15-30": 2175549,
+        "30-60": 931185,
+        "60+": 125082
+      },
+      "docs_over_token_limit": {
+        "4096": 56,
+        "8192": 6
+      },
+      "doc_tokens": {
+        "min": 6.0,
+        "p50": 143.0,
+        "p90": 754.0,
+        "p99": 1112.0,
+        "max": 14030.0,
+        "mean": 261.55
+      },
+      "spans_per_doc": {
+        "min": 1.0,
+        "p50": 6.0,
+        "p90": 30.0,
+        "p99": 78.0,
+        "max": 483.0,
+        "mean": 12.07
+      },
+      "labelled_spans": 0,
+      "machine_spans": 0,
+      "straddling_spans": 0,
+      "straddle_rate": 0.0
+    },
+    {
+      "source": "raid",
+      "docs": 467985,
+      "spans": 7464613,
+      "groups": 13371,
+      "human_docs": 13371,
+      "machine_docs": 454614,
+      "human_frac": 0.0286,
+      "machine_per_human": 34.0,
+      "by_split_role": {
+        "train_pool": 467985
+      },
+      "by_domain": {
+        "abstracts": 61810,
+        "books": 62335,
+        "news": 62300,
+        "poetry": 61985,
+        "recipes": 62020,
+        "reddit": 62265,
+        "reviews": 33005,
+        "wiki": 62265
+      },
+      "by_generator": {
+        "(human)": 13371,
+        "chatgpt": 26742,
+        "cohere": 26742,
+        "cohere-chat": 26742,
+        "gpt2": 53484,
+        "gpt3": 26742,
+        "gpt4": 26742,
+        "llama-chat": 53484,
+        "mistral": 53484,
+        "mistral-chat": 53484,
+        "mpt": 53484,
+        "mpt-chat": 53484
+      },
+      "by_style": {
+        "lower_natural": 4000,
+        "moses_cased": 331,
+        "moses_lower": 18,
+        "natural": 452067,
+        "unknown": 11569
+      },
+      "style_by_label": {
+        "lower_natural": {
+          "human": 108,
+          "machine": 3892
+        },
+        "moses_cased": {
+          "human": 30,
+          "machine": 301
+        },
+        "moses_lower": {
+          "human": 1,
+          "machine": 17
+        },
+        "natural": {
+          "human": 13104,
+          "machine": 438963
+        },
+        "unknown": {
+          "human": 128,
+          "machine": 11441
+        }
+      },
+      "span_length_buckets": {
+        "0-15": 3546438,
+        "15-30": 2676490,
+        "30-60": 1129152,
+        "60+": 112533
+      },
+      "docs_over_token_limit": {
+        "4096": 17,
+        "8192": 7
+      },
+      "doc_tokens": {
+        "min": 1.0,
+        "p50": 305.0,
+        "p90": 479.0,
+        "p99": 524.0,
+        "max": 17204.0,
+        "mean": 303.03
+      },
+      "spans_per_doc": {
+        "min": 1.0,
+        "p50": 14.0,
+        "p90": 30.0,
+        "p99": 58.0,
+        "max": 1839.0,
+        "mean": 15.95
+      },
+      "labelled_spans": 0,
+      "machine_spans": 0,
+      "straddling_spans": 0,
+      "straddle_rate": 0.0
+    },
+    {
+      "source": "seqxgpt",
+      "docs": 35904,
+      "spans": 346363,
+      "groups": 6221,
+      "human_docs": 6368,
+      "machine_docs": 29536,
+      "human_frac": 0.1774,
+      "machine_per_human": 4.64,
+      "by_split_role": {
+        "calib_pool": 35904
+      },
+      "by_domain": {
+        "(none)": 35904
+      },
+      "by_generator": {
+        "(human)": 6368,
+        "gpt2": 5811,
+        "gpt3re": 6000,
+        "gptj": 5946,
+        "gptneo": 5943,
+        "llama": 5836
+      },
+      "by_style": {
+        "lower_natural": 989,
+        "moses_cased": 1699,
+        "moses_lower": 4507,
+        "natural": 28154,
+        "unknown": 555
+      },
+      "style_by_label": {
+        "lower_natural": {
+          "human": 16,
+          "machine": 973
+        },
+        "moses_cased": {
+          "human": 11,
+          "machine": 1688
+        },
+        "moses_lower": {
+          "human": 2108,
+          "machine": 2399
+        },
+        "natural": {
+          "human": 4139,
+          "machine": 24015
+        },
+        "unknown": {
+          "human": 94,
+          "machine": 461
+        }
+      },
+      "span_length_buckets": {
+        "0-15": 77674,
+        "15-30": 149249,
+        "30-60": 100600,
+        "60+": 18840
+      },
+      "docs_over_token_limit": {
+        "4096": 0,
+        "8192": 0
+      },
+      "doc_tokens": {
+        "min": 1.0,
+        "p50": 267.0,
+        "p90": 412.0,
+        "p99": 709.0,
+        "max": 3200.0,
+        "mean": 271.64
+      },
+      "spans_per_doc": {
+        "min": 1.0,
+        "p50": 9.0,
+        "p90": 16.0,
+        "p99": 27.0,
+        "max": 166.0,
+        "mean": 9.65
+      },
+      "labelled_spans": 346363,
+      "machine_spans": 221591,
+      "straddling_spans": 2320,
+      "straddle_rate": 0.0067
+    }
+  ],
+  "overlap": {
+    "shared_keys": {
+      "mage|raid": 16,
+      "mage|seqxgpt": 483,
+      "raid|seqxgpt": 0
+    },
+    "shared_keys_human_both_sides": {
+      "mage|raid": 16,
+      "mage|seqxgpt": 477,
+      "raid|seqxgpt": 0
+    },
+    "unique_keys": {
+      "mage": 435687,
+      "raid": 465960,
+      "seqxgpt": 35681
+    },
+    "internal_duplicate_docs": {
+      "mage": 919,
+      "raid": 2025,
+      "seqxgpt": 223
+    },
+    "is_clean": false,
+    "examples": {
+      "mage|raid": [
+        [
+          "mage:test:0054815",
+          "raid:2a584507-1e7a-46f9-a2b9-c2aa126c3045"
+        ],
+        [
+          "mage:test:0055146",
+          "raid:44483fcc-a74d-41a8-8a07-7d5adbfe0da8"
+        ],
+        [
+          "mage:train:0318404",
+          "raid:8f37a2a2-f15b-4a68-b8e3-88077080cdaf"
+        ],
+        [
+          "mage:valid:0054359",
+          "raid:77e9e6ad-9c4e-4b73-aaa3-4a591fcbc69c"
+        ],
+        [
+          "mage:test:0055006",
+          "raid:f617948f-7f0f-419a-b090-b3deaab28e4b"
+        ],
+        [
+          "mage:valid:0056490",
+          "raid:93a415a8-c64c-41aa-abaa-0f38923c3634"
+        ],
+        [
+          "mage:train:0319016",
+          "raid:04b0388d-e73b-4f1c-9f53-c08b6e7ab3b2"
+        ],
+        [
+          "mage:valid:0055389",
+          "raid:0fc07580-e4a6-4565-b320-565e68821538"
+        ],
+        [
+          "mage:valid:0054843",
+          "raid:b3cd4ab3-0e88-4629-bc51-0a774d3098ac"
+        ],
+        [
+          "mage:train:0316657",
+          "raid:8a74b221-8794-4a05-b598-b856f58d6f5e"
+        ]
+      ],
+      "mage|seqxgpt": [
+        [
+          "mage:train:0005789",
+          "seqxgpt:en_human_lines:003147"
+        ],
+        [
+          "mage:valid:0053425",
+          "seqxgpt:en_human_lines:005485"
+        ],
+        [
+          "mage:test:0000703",
+          "seqxgpt:en_human_lines:005154"
+        ],
+        [
+          "mage:train:0307755",
+          "seqxgpt:en_human_lines:000926"
+        ],
+        [
+          "mage:train:0300620",
+          "seqxgpt:en_human_lines:005376"
+        ],
+        [
+          "mage:train:0303360",
+          "seqxgpt:en_human_lines:005768"
+        ],
+        [
+          "mage:train:0310187",
+          "seqxgpt:en_human_lines:000719"
+        ],
+        [
+          "mage:train:0005886",
+          "seqxgpt:en_human_lines:000347"
+        ],
+        [
+          "mage:train:0309252",
+          "seqxgpt:en_human_lines:000814"
+        ],
+        [
+          "mage:train:0301180",
+          "seqxgpt:en_human_lines:004460"
+        ]
+      ]
+    }
+  },
+  "verify": [
+    {
+      "path": "C:\\Users\\benja\\Desktop\\aivhuman\\ml\\data\\processed\\phase1\\mage.jsonl",
+      "source": "mage",
+      "docs": 436606,
+      "spans": 5270321,
+      "human_docs": 152382,
+      "machine_docs": 284224,
+      "labelled_span_docs": 0,
+      "sidecar_docs": 436606,
+      "polarity_fingerprint": "1fcdbbfb894b9797",
+      "ok": true,
+      "n_problems": 0,
+      "problems": []
+    },
+    {
+      "path": "C:\\Users\\benja\\Desktop\\aivhuman\\ml\\data\\processed\\phase1\\raid.jsonl",
+      "source": "raid",
+      "docs": 467985,
+      "spans": 7464613,
+      "human_docs": 13371,
+      "machine_docs": 454614,
+      "labelled_span_docs": 0,
+      "sidecar_docs": 467985,
+      "polarity_fingerprint": "1fcdbbfb894b9797",
+      "ok": true,
+      "n_problems": 0,
+      "problems": []
+    },
+    {
+      "path": "C:\\Users\\benja\\Desktop\\aivhuman\\ml\\data\\processed\\phase1\\seqxgpt.jsonl",
+      "source": "seqxgpt",
+      "docs": 35904,
+      "spans": 346363,
+      "human_docs": 6368,
+      "machine_docs": 29536,
+      "labelled_span_docs": 35904,
+      "sidecar_docs": 35904,
+      "polarity_fingerprint": "1fcdbbfb894b9797",
+      "ok": true,
+      "n_problems": 0,
+      "problems": []
+    }
+  ]
+}

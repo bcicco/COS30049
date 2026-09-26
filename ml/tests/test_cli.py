@@ -92,6 +92,7 @@ def test_every_subcommand_is_reachable() -> None:
         "ingest",
         "peek",
         "report",
+        "split",
         "verify",
     ]
 

@@ -1,4 +1,4 @@
-"""Phase 1 command line: acquire, derive, peek, ingest, verify, report."""
+"""Data command line: acquire, derive, peek, ingest, verify, report, split."""
 
 import argparse
 import random
@@ -11,6 +11,7 @@ import orjson
 
 from aivhuman import acquire, config
 from aivhuman import report as report_mod
+from aivhuman import splits as splits_mod
 from aivhuman import verify as verify_mod
 from aivhuman.ingest import ingest_mage, ingest_raid, ingest_seqxgpt, write_sidecar
 from aivhuman.labels import mage_label, raid_label
@@ -63,6 +64,9 @@ def _parser() -> argparse.ArgumentParser:
     p = subparsers.add_parser("report", help="write the Phase 1 report CSVs")
     p.add_argument("--skip-verify", action="store_true")
     p.set_defaults(handler=_report)
+
+    p = subparsers.add_parser("split", help="write the grouped split manifests")
+    p.set_defaults(handler=_split)
 
     return parser
 
@@ -230,6 +234,19 @@ def _report(args: argparse.Namespace) -> int:
         verify_data = [r.as_dict() for r in verify_mod.verify_all(config.PROCESSED_DIR)]
     path = report_mod.build(config.PROCESSED_DIR, config.REPORTS_DIR, verify=verify_data)
     print(f"wrote {path}")
+    return 0
+
+
+def _split(_args: argparse.Namespace) -> int:
+    stats = splits_mod.build(config.PROCESSED_DIR, config.MANIFESTS_DIR, config.SPLITS_REPORT)
+    for name, n in stats.docs.items():
+        print(
+            f"{name:>14}: {n:>8,} docs {stats.groups[name]:>8,} groups "
+            f"{stats.human[name]:>7,} human {stats.machine[name]:>8,} machine"
+        )
+    for reason, n in stats.dropped.items():
+        print(f"  dropped {reason}: {n:,}")
+    print(f"wrote {config.MANIFESTS_DIR} and {config.SPLITS_REPORT}")
     return 0
 
 
