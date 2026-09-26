@@ -116,9 +116,7 @@ def load_rows(path: Path, split: str) -> Iterator[RawRow]:
     with path.open(encoding=MAGE_ENCODING, newline="") as fh:
         reader = csv.DictReader(fh)
         if reader.fieldnames != COLUMNS:
-            raise ValueError(
-                f"{path.name}: expected columns {COLUMNS}, got {reader.fieldnames}"
-            )
+            raise ValueError(f"{path.name}: expected columns {COLUMNS}, got {reader.fieldnames}")
         for i, row in enumerate(reader):
             yield RawRow(
                 split=split,

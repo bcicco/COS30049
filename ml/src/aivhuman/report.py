@@ -52,9 +52,7 @@ class CorpusSummary(BaseModel):
 
     @property
     def straddle_rate(self) -> float:
-        return (
-            self.straddling_spans / self.labelled_spans if self.labelled_spans else 0.0
-        )
+        return self.straddling_spans / self.labelled_spans if self.labelled_spans else 0.0
 
     def quantiles(self, values: list[int]) -> dict[str, float]:
         if not values:
@@ -88,8 +86,7 @@ class CorpusSummary(BaseModel):
             "by_generator": dict(sorted(self.by_generator.items())),
             "by_style": dict(sorted(self.by_style.items())),
             "style_by_label": {
-                k: dict(sorted(v.items()))
-                for k, v in sorted(self.style_by_label.items())
+                k: dict(sorted(v.items())) for k, v in sorted(self.style_by_label.items())
             },
             "span_length_buckets": dict(self.span_length_buckets),
             "docs_over_token_limit": dict(sorted(self.docs_over_token_limit.items())),
@@ -130,9 +127,7 @@ def summarise(
         style = str(doc.meta.get("detok_style", "(unknown)"))
         summary.by_domain[domain] = summary.by_domain.get(domain, 0) + 1
         summary.by_generator[generator] = summary.by_generator.get(generator, 0) + 1
-        summary.by_split_role[doc.split_role] = (
-            summary.by_split_role.get(doc.split_role, 0) + 1
-        )
+        summary.by_split_role[doc.split_role] = summary.by_split_role.get(doc.split_role, 0) + 1
         summary.by_style[style] = summary.by_style.get(style, 0) + 1
         label_name = "human" if doc.label == LABEL_HUMAN else "machine"
         summary.style_by_label.setdefault(style, {})
@@ -160,9 +155,7 @@ def summarise(
                 over[str(limit)] += 1
 
         if content_keys is not None:
-            content_keys.setdefault(
-                stable_hash(text_key(doc.text)), (doc.doc_id, doc.label)
-            )
+            content_keys.setdefault(stable_hash(text_key(doc.text)), (doc.doc_id, doc.label))
 
     summary.groups = len(groups)
     summary.span_length_buckets = buckets
@@ -304,9 +297,7 @@ def metric_rows(
                 "machine_docs": s.machine_docs,
                 "human_frac": round(s.human_frac, 4),
                 "machine_per_human": round(s.machine_per_human, 2),
-                "majority_baseline_acc": (
-                    round(s.machine_docs / s.docs, 4) if s.docs else 0.0
-                ),
+                "majority_baseline_acc": (round(s.machine_docs / s.docs, 4) if s.docs else 0.0),
                 "is_green": side.get("is_green", ""),
             },
         )
@@ -340,9 +331,7 @@ def metric_rows(
                 s.source,
                 {
                     "timed_out_batches": side.get("timed_out_batches", 0),
-                    "forced_fallback_docs": ";".join(
-                        side.get("forced_fallback_docs") or []
-                    ),
+                    "forced_fallback_docs": ";".join(side.get("forced_fallback_docs") or []),
                 },
             )
 
@@ -378,9 +367,7 @@ def metric_rows(
     return rows
 
 
-def _write_csv(
-    path: Path, header: Sequence[str], rows: Sequence[Sequence[Any]]
-) -> None:
+def _write_csv(path: Path, header: Sequence[str], rows: Sequence[Sequence[Any]]) -> None:
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(header)
@@ -453,18 +440,14 @@ def _overlap_from_keys(
                 if keys[left][k][1] == LABEL_HUMAN and keys[right][k][1] == LABEL_HUMAN
             )
             if common:
-                examples[pair] = [
-                    [keys[left][k][0], keys[right][k][0]] for k in common[:10]
-                ]
+                examples[pair] = [[keys[left][k][0], keys[right][k][0]] for k in common[:10]]
     return {
         "shared_keys": shared,
         "shared_keys_human_both_sides": human_only,
         "unique_keys": {k: len(v) for k, v in keys.items()},
         # Derivable rather than counted: a key is recorded once per corpus, so
         # whatever a corpus has beyond its unique keys is an internal repeat.
-        "internal_duplicate_docs": {
-            k: docs.get(k, 0) - len(v) for k, v in keys.items()
-        },
+        "internal_duplicate_docs": {k: docs.get(k, 0) - len(v) for k, v in keys.items()},
         "is_clean": not any(shared.values()),
         "examples": examples,
     }

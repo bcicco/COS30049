@@ -533,9 +533,7 @@ def ingest_seqxgpt(
     docs = written = 0
 
     with _atomic_writer(out_path) as fh:
-        for doc in seqxgpt.build_docs(
-            directory, split_role, segmenter=segmenter, stats=stats
-        ):
+        for doc in seqxgpt.build_docs(directory, split_role, segmenter=segmenter, stats=stats):
             written += fh.write(doc_to_json(doc) + b"\n")
             docs += 1
             prog.update(docs)

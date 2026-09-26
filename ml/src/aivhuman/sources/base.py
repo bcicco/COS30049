@@ -1,4 +1,6 @@
-"""Fetching raw corpus files from Hugging Face and GitHub, just a downloader utility, not a data loader."""
+"""Fetching raw corpus files from Hugging Face and GitHub, just a downloader utility, not a data
+loader.
+"""
 
 import time
 import urllib.parse

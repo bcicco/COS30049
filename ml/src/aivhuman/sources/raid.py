@@ -148,9 +148,7 @@ def build_docs(
             yield doc
 
 
-def scan(
-    path: Path, *, batch_size: int = BATCH_SIZE, stats: RaidStats | None = None
-) -> RaidStats:
+def scan(path: Path, *, batch_size: int = BATCH_SIZE, stats: RaidStats | None = None) -> RaidStats:
     """Populate every counter that does not require the text"""
 
     st = stats if stats is not None else RaidStats()

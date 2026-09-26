@@ -1,9 +1,10 @@
 """Derive RAID's 11.8 GB CSV into parquet, once."""
 
 # big data nugget of wisdom here..... this is an 11gb csv
-# chose to read as parquet because parquet stores data by colum, we only want subsect of data where attack
-# == none, integrity check only takes 8 seconds XD
-# replaced the prompt column with prompt_sha and prompt_len_chars so still have identifier with sig. less storage
+# chose to read as parquet because parquet stores data by colum, we only want subsect of data where
+# attack == none, integrity check only takes 8 seconds XD
+# replaced the prompt column with prompt_sha and prompt_len_chars so still have identifier with sig.
+# less storage
 
 # also parquet column types in general just makes me happier inside
 
@@ -87,11 +88,7 @@ class RaidDeriveStats(BaseModel):
     @property
     def machine_per_human(self) -> float:
         """For class balancing later down the track"""
-        return (
-            self.clean_machine_rows / self.clean_human_rows
-            if self.clean_human_rows
-            else 0.0
-        )
+        return self.clean_machine_rows / self.clean_human_rows if self.clean_human_rows else 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -142,16 +139,9 @@ def derive(
                     part = out.filter(pc.equal(batch.column("attack"), attack))
                     writer = attack_writers.get(attack)
                     if writer is None:
-                        path = (
-                            out_dir
-                            / ATTACK_DIR
-                            / f"attack={attack}"
-                            / "part-0000.parquet"
-                        )
+                        path = out_dir / ATTACK_DIR / f"attack={attack}" / "part-0000.parquet"
                         path.parent.mkdir(parents=True, exist_ok=True)
-                        writer = pq.ParquetWriter(
-                            path, out.schema, compression=_COMPRESSION
-                        )
+                        writer = pq.ParquetWriter(path, out.schema, compression=_COMPRESSION)
                         attack_writers[attack] = writer
                     writer.write_batch(part)
 
@@ -212,9 +202,7 @@ def _read_batches(csv_path: Path, block_size: int) -> Iterator[pa.RecordBatch]:
         csv_path,
         read_options=pacsv.ReadOptions(block_size=block_size),
         parse_options=pacsv.ParseOptions(newlines_in_values=True),
-        convert_options=pacsv.ConvertOptions(
-            column_types=dict.fromkeys(COLUMNS, pa.string())
-        ),
+        convert_options=pacsv.ConvertOptions(column_types=dict.fromkeys(COLUMNS, pa.string())),
     )
     names = list(reader.schema.names)
     if names != COLUMNS:

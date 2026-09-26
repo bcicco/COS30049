@@ -126,8 +126,8 @@ def stable_hash(s: str, n: int = 16) -> str:
     """Process-stable hex digest. Use this, never the builtin `hash()`."""
 
     # ************* NOTE **************
-    # Do not use the built in hash bc/ hash will change across runs & processes, if we need to modify / rerun
-    # some things it will be a nightmare to track down what changed.
+    # Do not use the built in hash bc/ hash will change across runs & processes, if we need to
+    # modify / rerun some things it will be a nightmare to track down what changed.
 
     if not 1 <= n <= 32:
         raise ValueError(f"n must be in [1, 32], got {n}")

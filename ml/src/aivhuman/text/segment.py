@@ -129,9 +129,7 @@ class Segmenter(BaseModel):
     def model_post_init(self, _context: Any, /) -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", SyntaxWarning)
-            self._seg = pysbd.Segmenter(
-                language=self.language, clean=False, char_span=True
-            )
+            self._seg = pysbd.Segmenter(language=self.language, clean=False, char_span=True)
 
     def segment(self, text: str) -> list[tuple[int, int]]:
         """Return ordered, non-overlapping `(start, end)` pairs."""
@@ -164,9 +162,7 @@ class Segmenter(BaseModel):
             return self._fallback_split(text, offset, end_limit)
         return self._segment_chunk(text, offset, end_limit)
 
-    def _fallback_split(
-        self, text: str, offset: int, end_limit: int
-    ) -> list[tuple[int, int]]:
+    def _fallback_split(self, text: str, offset: int, end_limit: int) -> list[tuple[int, int]]:
         """Split without pysbd, for the chunks pysbd cannot survive."""
         spans: list[tuple[int, int]] = []
         start = offset
@@ -180,9 +176,7 @@ class Segmenter(BaseModel):
             spans.append(trimmed)
         return spans
 
-    def _segment_chunk(
-        self, text: str, offset: int, end_limit: int
-    ) -> list[tuple[int, int]]:
+    def _segment_chunk(self, text: str, offset: int, end_limit: int) -> list[tuple[int, int]]:
         """Run PySBD over one window and return absolute spans."""
         chunk = text[offset:end_limit]
         raw = self._seg.segment(chunk)
@@ -202,14 +196,12 @@ class Segmenter(BaseModel):
             spans.append((trimmed[0] + offset, trimmed[1] + offset))
         return spans
 
-    def _fill_gaps(
-        self, text: str, spans: list[tuple[int, int]]
-    ) -> list[tuple[int, int]]:
+    def _fill_gaps(self, text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
         """Recover text PySBD omitted entirely. Essay incoming, apologies....
 
         pysbd does not always cover its input. On test run, an arxiv abstract
-        containing @xmath0 placeholders, unicode symbols and an inline citation, it returned six spans
-        whose offsets jump 558 -> 857 and 1026 -> 1142..... dropping 413 characters... :(
+        containing @xmath0 placeholders, unicode symbols and an inline citation, it returned six
+        spans whose offsets jump 558 -> 857 and 1026 -> 1142..... dropping 413 characters... :(
         Every span it returned round tripped perfectly, so neither the offset check OR the
         anchor repair path sees this.....only coverage accounting does....
 
@@ -240,9 +232,7 @@ class Segmenter(BaseModel):
             cursor = max(cursor, end)
         return filled
 
-    def _close_gaps(
-        self, text: str, spans: list[tuple[int, int]]
-    ) -> list[tuple[int, int]]:
+    def _close_gaps(self, text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
         """Normalise to a guaranteed partition: ordered, disjoint, fully covering."""
 
         # The single top man #1 MVP authoritative pass. The only one whose output the rest of
@@ -264,9 +254,7 @@ class Segmenter(BaseModel):
             cursor = clipped[1]
         return closed
 
-    def _anchor(
-        self, text: str, ts: object, cursor: int
-    ) -> tuple[int, int] | tuple[None, None]:
+    def _anchor(self, text: str, ts: object, cursor: int) -> tuple[int, int] | tuple[None, None]:
         """Verify PySBD's offsets, re-anchoring them if they do not round-trip."""
         sent: str = ts.sent  # type: ignore[attr-defined]
         start: int = ts.start  # type: ignore[attr-defined]

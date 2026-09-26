@@ -40,17 +40,11 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers()
 
     p = subparsers.add_parser("acquire", help="download the raw corpora")
-    p.add_argument(
-        "--source", choices=["raid", "mage", "seqxgpt", "all"], default="all"
-    )
+    p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "all"], default="all")
     p.set_defaults(handler=_acquire)
 
-    p = subparsers.add_parser(
-        "derive", help="scan RAID's 11.8 GB CSV into parquet, once"
-    )
-    p.add_argument(
-        "--no-attacks", action="store_true", help="skip the Phase 5 partitions"
-    )
+    p = subparsers.add_parser("derive", help="scan RAID's 11.8 GB CSV into parquet, once")
+    p.add_argument("--no-attacks", action="store_true", help="skip the Phase 5 partitions")
     p.set_defaults(handler=_derive)
 
     p = subparsers.add_parser("peek", help="print stratified rows for a human to read")
@@ -59,15 +53,11 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=_peek)
 
     p = subparsers.add_parser("ingest", help="segment the corpora into JSONL")
-    p.add_argument(
-        "--source", choices=["raid", "mage", "seqxgpt", "all"], default="all"
-    )
+    p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "all"], default="all")
     p.add_argument("--workers", type=int, default=None)
     p.set_defaults(handler=_ingest)
 
-    p = subparsers.add_parser(
-        "verify", help="re-read the JSONL and re-assert every invariant"
-    )
+    p = subparsers.add_parser("verify", help="re-read the JSONL and re-assert every invariant")
     p.set_defaults(handler=_verify)
 
     p = subparsers.add_parser("report", help="write the Phase 1 report CSVs")
@@ -104,9 +94,7 @@ def _derive(args: argparse.Namespace) -> int:
         include_attacks=not args.no_attacks,
         progress=True,
     )
-    print(
-        orjson.dumps(stats.as_dict(), option=orjson.OPT_INDENT_2).decode(), flush=True
-    )
+    print(orjson.dumps(stats.as_dict(), option=orjson.OPT_INDENT_2).decode(), flush=True)
     return 0
 
 
@@ -212,9 +200,7 @@ def _ingest(args: argparse.Namespace) -> int:
             flush=True,
         )
         if result.forced_fallback_docs:
-            print(
-                f"         pysbd skipped for: {result.forced_fallback_docs}", flush=True
-            )
+            print(f"         pysbd skipped for: {result.forced_fallback_docs}", flush=True)
     return 0
 
 
@@ -242,9 +228,7 @@ def _report(args: argparse.Namespace) -> int:
     verify_data: list[dict[str, Any]] | None = None
     if not args.skip_verify:
         verify_data = [r.as_dict() for r in verify_mod.verify_all(config.PROCESSED_DIR)]
-    path = report_mod.build(
-        config.PROCESSED_DIR, config.REPORTS_DIR, verify=verify_data
-    )
+    path = report_mod.build(config.PROCESSED_DIR, config.REPORTS_DIR, verify=verify_data)
     print(f"wrote {path}")
     return 0
 

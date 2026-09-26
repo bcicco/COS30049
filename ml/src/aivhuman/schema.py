@@ -37,7 +37,8 @@ TRAINABLE_ROLES: Final = frozenset({"train_pool"})
 
 Label = Annotated[int, Field(ge=0, le=1)]
 
-# sentences stored as character offsets into the parent Doc.text, which is NFC-normalised, Offset used to denote this
+# sentences stored as character offsets into the parent Doc.text, which is NFC-normalised, Offset
+# used to denote this
 Offset = Annotated[int, Field(ge=0)]
 
 
@@ -74,7 +75,9 @@ class SentenceSpan(BaseModel):
     # unavailable at training time we need to make sure not to leak them here
 
     machine_char_frac: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
-    """Fraction of this span's characters on the machine side of the boundary, used to denote bizzare parsing."""
+    """Fraction of this span's characters on the machine side of the boundary, used to denote
+    bizzare parsing.
+    """
 
     straddles_boundary: bool = False
     """True when this span contains both human and machine characters, see above ^^"""
@@ -157,11 +160,7 @@ class Doc(BaseModel):
             raise ValueError(f"doc_id {self.doc_id!r} lacks the {self.source!r} prefix")
         if not self.group_id.startswith(f"{self.source}:"):
             raise ValueError(f"group_id {self.group_id!r} lacks the source prefix")
-        if (
-            self.label == LABEL_HUMAN
-            and self.generator is not None
-            and self.source != "mage"
-        ):
+        if self.label == LABEL_HUMAN and self.generator is not None and self.source != "mage":
             # MAGE's paraphrase testbed labels paraphrased human text as machine,
             # so it is the only case where a human doc has a generator name.
             raise ValueError(f"human doc names generator {self.generator!r}")
@@ -186,9 +185,7 @@ class Doc(BaseModel):
             if s.end > n:
                 raise ValueError(f"span {i} ends at {s.end}, past text length {n}")
             if s.start < prev_end:
-                raise ValueError(
-                    f"span {i} starts {s.start} before previous end {prev_end}"
-                )
+                raise ValueError(f"span {i} starts {s.start} before previous end {prev_end}")
             gap = self.text[prev_end : s.start]
             if gap.strip():
                 raise ValueError(f"non-whitespace gap before span {i}: {gap!r}")

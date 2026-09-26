@@ -50,9 +50,7 @@ def fetch_mage(revision: str | None = None) -> list[Path]:
     ]
 
 
-def fetch_seqxgpt(
-    commit: str = SEQXGPT_COMMIT, *, include_ood: bool = True
-) -> list[Path]:
+def fetch_seqxgpt(commit: str = SEQXGPT_COMMIT, *, include_ood: bool = True) -> list[Path]:
     """Download SeqXGPT-Bench, and by default the OOD sentence-level set too."""
     dest = RAW_DIR / "seqxgpt"
     paths = list(SEQXGPT_BENCH_FILES)

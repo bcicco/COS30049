@@ -2,15 +2,14 @@
 
 # ----------------------- REASONING FOR THIS EXISTING----------------------
 
-# Loading a class Doc already validates most of the schema with model_validation decorators, which is the
-# design.  This adds what construction cannot see:
+# Loading a class Doc already validates most of the schema with model_validation decorators, which
+# is the design.  This adds what construction cannot see:
 
 # - text[start:end] really is the sentence, trimmed, for every span.
 # - n_words still matches the text it describes.
 # - doc_id is unique across *all three* sources, not just within one.
 # - the line count matches the docs in the sidecar, so a file that lost its
 #  tail is caught rather than quietly read short.
-
 
 from collections.abc import Iterator
 from pathlib import Path
@@ -87,9 +86,7 @@ def verify_file(path: Path, *, seen_doc_ids: set[str] | None = None) -> VerifyRe
                 report.note(f"duplicate doc_id {doc.doc_id!r}")
             ids.add(doc.doc_id)
             if report.source and doc.source != report.source:
-                report.note(
-                    f"{doc.doc_id}: source {doc.source!r} in a {report.source!r} file"
-                )
+                report.note(f"{doc.doc_id}: source {doc.source!r} in a {report.source!r} file")
             report.source = report.source or doc.source
             if doc.label == LABEL_HUMAN:
                 report.human_docs += 1
@@ -110,10 +107,7 @@ def verify_file(path: Path, *, seen_doc_ids: set[str] | None = None) -> VerifyRe
 def verify_all(directory: Path) -> list[VerifyReport]:
     """Verify every `*.jsonl` in `directory`, sharing the `doc_id` set."""
     seen: set[str] = set()
-    return [
-        verify_file(path, seen_doc_ids=seen)
-        for path in sorted(directory.glob("*.jsonl"))
-    ]
+    return [verify_file(path, seen_doc_ids=seen) for path in sorted(directory.glob("*.jsonl"))]
 
 
 def iter_problems(reports: list[VerifyReport]) -> Iterator[str]:
@@ -142,30 +136,22 @@ def _check_doc(doc: Doc, report: VerifyReport) -> None:
             report.note(f"{doc.doc_id}: span {i} is not trimmed: {sentence[:40]!r}")
         actual = n_words(sentence)
         if span.n_words != actual:
-            report.note(
-                f"{doc.doc_id}: span {i} claims {span.n_words} words, text has {actual}"
-            )
+            report.note(f"{doc.doc_id}: span {i} claims {span.n_words} words, text has {actual}")
 
     # SeqXGPT is the only source with sentence provenance; a label anywhere else
     # is a training leak, and a missing one there breaks ground truth.
     labelled = sum(s.label is not None for s in doc.sentences)
     if doc.source == "seqxgpt" and labelled != len(doc.sentences):
-        report.note(
-            f"{doc.doc_id}: {len(doc.sentences) - labelled} spans without a label"
-        )
+        report.note(f"{doc.doc_id}: {len(doc.sentences) - labelled} spans without a label")
     if doc.source != "seqxgpt" and labelled:
-        report.note(
-            f"{doc.doc_id}: {labelled} sentence labels in a {doc.source} document"
-        )
+        report.note(f"{doc.doc_id}: {labelled} sentence labels in a {doc.source} document")
 
 
 def _check_sidecar(path: Path, report: VerifyReport) -> None:
     """Compare the file against the sidecar the ingest wrote beside it."""
     sidecar = path.with_name(f"{path.stem}.stats.json")
     if not sidecar.exists():
-        report.note(
-            f"no sidecar at {sidecar.name}; provenance for this file is unknown"
-        )
+        report.note(f"no sidecar at {sidecar.name}; provenance for this file is unknown")
         return
 
     payload = orjson.loads(sidecar.read_bytes())

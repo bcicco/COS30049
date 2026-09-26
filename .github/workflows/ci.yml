@@ -1,0 +1,55 @@
+name: ci
+
+# Windows is in the matrix because it is the development platform and the
+# assumptions that broke here were all Windows-specific: cp1252 consoles,
+# csv.field_size_limit overflowing a C long on sys.maxsize, spawn re-importing
+# __main__ by path, and no symlink support in the HF cache. Ubuntu is there so
+# none of the workarounds quietly become requirements.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: ml
+    env:
+      # No corpus and no tokenizer download: the network-marked tests are
+      # excluded by the pytest config
+      PYTHONUTF8: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: ml/uv.lock
+
+      - name: Sync from the lockfile
+        run: uv sync --extra dev --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Types
+        run: uv run mypy
+
+      - name: Tests
+        run: uv run pytest

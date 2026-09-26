@@ -1,4 +1,6 @@
-"""Every label in the project, in one module because it got two confusing and choatic having them in different places."""
+"""Every label in the project, in one module because it got two confusing and choatic having
+them in different places.
+"""
 
 import re
 from typing import Final, NamedTuple
@@ -176,9 +178,7 @@ def parse_src(src: str) -> ParsedSrc:
 
 
 # gpt3re is the upstream spelling for the GPT-3 re-generation variant, weird i know.
-SEQXGPT_GENERATORS: Final = frozenset(
-    {"gpt2", "gptneo", "gptj", "llama", "gpt3re", "human"}
-)
+SEQXGPT_GENERATORS: Final = frozenset({"gpt2", "gptneo", "gptj", "llama", "gpt3re", "human"})
 
 
 def seqxgpt_doc_label(raw: str, boundary: int, length: int) -> int:

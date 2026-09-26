@@ -12,15 +12,11 @@ from typing import Final
 
 from dotenv import load_dotenv
 
-ML_ROOT: Final = (
-    Path(__file__).resolve().parents[2]
-)  # two levels up from ml/src/aivhuman/config.py
+ML_ROOT: Final = Path(__file__).resolve().parents[2]  # two levels up from ml/src/aivhuman/config.py
 
 load_dotenv(ML_ROOT / ".env")
 
-DATA_ROOT: Final = Path(
-    os.environ.get("AIVHUMAN_DATA_ROOT") or ML_ROOT / "data"
-).resolve()
+DATA_ROOT: Final = Path(os.environ.get("AIVHUMAN_DATA_ROOT") or ML_ROOT / "data").resolve()
 RAW_DIR: Final = DATA_ROOT / "raw"
 INTERIM_DIR: Final = DATA_ROOT / "interim"
 PROCESSED_DIR: Final = DATA_ROOT / "processed" / "phase1"
@@ -53,7 +49,8 @@ def ensure_dirs() -> None:
 
 def workers() -> int:
     """Segmentation worker count. Leaves two cores for the OS and the writer."""
-    # NOTE: Reconfigure this as you want, this is what works best for me on my 8-core but may need adjusting on your machine.
+    # NOTE: Reconfigure this as you want, this is what works best for me on my 8-core but may
+    # need adjusting on your machine.
     override = os.environ.get("AIVHUMAN_WORKERS")
     if override:
         return max(1, int(override))

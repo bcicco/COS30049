@@ -165,9 +165,7 @@ def build_docs(
     records = load_records(directory)
     st.records = len(records)
 
-    assignment = recover_seqxgpt_groups(
-        [(r.file_stem, r.text, r.prompt_len) for r in records]
-    )
+    assignment = recover_seqxgpt_groups([(r.file_stem, r.text, r.prompt_len) for r in records])
 
     for rec, group_id in zip(records, assignment.group_ids, strict=True):
         expected = FILE_GENERATOR.get(rec.file_stem)

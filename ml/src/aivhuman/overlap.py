@@ -5,7 +5,6 @@
 # in MAGE turns cross-corpus into a memorisation measurement.
 # That number has to be known before the result is quoted, not after.
 
-
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -42,14 +41,10 @@ class OverlapStats(BaseModel):
         return {
             "docs": dict(sorted(self.docs.items())),
             "unique_keys": dict(sorted(self.unique_keys.items())),
-            "internal_duplicate_docs": dict(
-                sorted(self.internal_duplicate_docs.items())
-            ),
+            "internal_duplicate_docs": dict(sorted(self.internal_duplicate_docs.items())),
             "shared_keys": dict(sorted(self.shared_keys.items())),
             "is_clean": self.is_clean,
-            "examples": {
-                k: [list(p) for p in v] for k, v in sorted(self.examples.items())
-            },
+            "examples": {k: [list(p) for p in v] for k, v in sorted(self.examples.items())},
         }
 
 
@@ -81,7 +76,6 @@ def overlap_report(directory: Path) -> OverlapStats:
         stats.shared_keys[pair] = len(shared)
         if shared:
             stats.examples[pair] = [
-                (keys[left][key], keys[right][key])
-                for key in sorted(shared)[:MAX_EXAMPLES]
+                (keys[left][key], keys[right][key]) for key in sorted(shared)[:MAX_EXAMPLES]
             ]
     return stats
