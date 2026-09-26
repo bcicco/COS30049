@@ -1,7 +1,5 @@
 """Token counting and span attribution."""
 
-from __future__ import annotations
-
 import pytest
 
 from aivhuman.text.tokens import N_SPECIAL_TOKENS, count_tokens, tokenizer
@@ -46,7 +44,7 @@ def test_tokens_partition_across_spans(fake_tokens) -> None:  # type: ignore[no-
 def test_overlapping_offsets_land_in_one_span_each(fake_tokens) -> None:  # type: ignore[no-untyped-def]
     """A multi-byte character split across BPE tokens yields overlapping offsets.
 
-    The real tokenizer does this: an emoji produced ``(12, 14)`` and ``(13, 14)``.
+    The real tokenizer does this: an emoji produced `(12, 14)` and `(13, 14)`.
     Midpoint attribution keeps the counts a partition; containment would double
     count or drop.
     """
@@ -86,9 +84,9 @@ def test_empty_text_and_no_spans(fake_tokens) -> None:  # type: ignore[no-untype
 def test_modernbert_offsets_are_character_based() -> None:
     """The assumption the whole span-alignment design rests on.
 
-    ``tokenizers`` offsets are byte-based for some ByteLevel-BPE configurations
+    `tokenizers` offsets are byte-based for some ByteLevel-BPE configurations
     and character-based for others. If this were byte-based we would need a
-    byte-to-character map per document, and every ``n_tokens`` would be subtly
+    byte-to-character map per document, and every `n_tokens` would be subtly
     wrong in a way no other assertion catches.
     """
     tok = tokenizer()

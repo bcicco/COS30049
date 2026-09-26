@@ -1,6 +1,6 @@
-"""SeqXGPT's human/machine boundary, from ``prompt_len`` to sentence labels.
+"""SeqXGPT's human/machine boundary, from `prompt_len` to sentence labels.
 
-``prompt_len`` is a character offset into the raw record: ``text[:prompt_len]``
+`prompt_len` is a character offset into the raw record: `text[:prompt_len]`
 is human and the rest is machine. Four things can go wrong without raising.
 NFC can shorten the prefix and slide the boundary by a character. Our segmenter
 can disagree with the one upstream used, putting the boundary inside a sentence.
@@ -12,8 +12,6 @@ than an error, and these labels are the ground truth Phase 7 measures the
 sentence scores against. A quiet defect here does not look like a data problem;
 it looks like a model that cannot find sentence boundaries.
 """
-
-from __future__ import annotations
 
 import json
 import unicodedata
@@ -42,7 +40,7 @@ SPANS = [(0, 10), (11, 20)]
 
 
 def row(text: str, label: str, prompt_len: int | None = None) -> dict[str, object]:
-    """One raw record. ``prompt_len`` is omitted when None, as ``en_human_lines`` does."""
+    """One raw record. `prompt_len` is omitted when None, as `en_human_lines` does."""
     out: dict[str, object] = {"text": text, "label": label}
     if prompt_len is not None:
         out["prompt_len"] = prompt_len
@@ -102,7 +100,7 @@ def test_no_spans_gives_no_labels() -> None:
 
 
 def test_a_zero_width_span_does_not_divide_by_zero() -> None:
-    """``SentenceSpan`` forbids empty spans, so this guard covers raw offsets only."""
+    """`SentenceSpan` forbids empty spans, so this guard covers raw offsets only."""
     assert assign_sentence_labels([(5, 5)], 0) == [(LABEL_HUMAN, 0.0, False)]
 
 
@@ -115,7 +113,7 @@ def test_a_zero_width_span_does_not_divide_by_zero() -> None:
     ("boundary", "expected"), [(0, 0), (10, 0), (20, 0), (11, 1), (15, 5), (99, 79)]
 )
 def test_boundary_snap_distance(boundary: int, expected: int) -> None:
-    """Measures whether ``prompt_len`` actually lands on sentence edges.
+    """Measures whether `prompt_len` actually lands on sentence edges.
 
     A median of 0 (92.2% exact, as measured) means SeqXGPT's per-sentence
     provenance is real. A median of 30 characters would mean the transitions are
@@ -179,7 +177,7 @@ def test_a_boundary_inside_a_sentence_is_flagged(tmp_path: Path, word_tokenizer:
 
 
 def test_a_record_without_prompt_len_is_wholly_human(tmp_path: Path, word_tokenizer: None) -> None:
-    """``en_human_lines.jsonl`` has no ``prompt_len`` key at all."""
+    """`en_human_lines.jsonl` has no `prompt_len` key at all."""
     text = f"{HUMAN_SENT} Another human sentence follows it."
     write_records(tmp_path, "en_human_lines", [row(text, "human")])
     stats = SeqXGPTStats()
@@ -215,8 +213,8 @@ def test_prompt_len_at_the_end_is_human_and_names_no_generator(
 ) -> None:
     """A generator file can hold a record whose machine continuation is empty.
 
-    ``Doc`` rejects a human document that names a generator, so the adapter has
-    to drop it; ``label_raw`` keeps the provenance for the report.
+    `Doc` rejects a human document that names a generator, so the adapter has
+    to drop it; `label_raw` keeps the provenance for the report.
     """
     write_records(tmp_path, "en_gpt2_lines", [row(MIXED, "gpt2", len(MIXED))])
 
@@ -235,7 +233,7 @@ def test_an_nfc_shortening_prefix_carries_the_boundary(
 
     The fixture is built with NFD rather than written as a literal: a decomposed
     sequence typed into a source file gets precomposed by most editors on save,
-    which would make this pass for the wrong reason. Reusing ``prompt_len``
+    which would make this pass for the wrong reason. Reusing `prompt_len`
     against the normalised text would put the boundary one character late, which
     relabels the characters either side of every transition.
     """
@@ -262,12 +260,12 @@ def test_an_nfc_shortening_prefix_carries_the_boundary(
 def test_an_uncarryable_boundary_is_quarantined_not_guessed(
     tmp_path: Path, word_tokenizer: None
 ) -> None:
-    """Hangul jamo compose under NFC but report ``combining() == 0``.
+    """Hangul jamo compose under NFC but report `combining() == 0`.
 
-    Retraction cannot see the hazard, so only the ``nfc(head) + nfc(tail) ==
-    nfc(whole)`` check catches it. Such a record is dropped rather than cut
+    Retraction cannot see the hazard, so only the `nfc(head) + nfc(tail) ==
+    nfc(whole)` check catches it. Such a record is dropped rather than cut
     somewhere plausible, and the surviving records keep their original row
-    indices, since ``doc_id`` is positional.
+    indices, since `doc_id` is positional.
     """
     # Escapes rather than a literal: an editor would precompose it on save.
     jamo = "가"  # leading G + vowel A -> one syllable under NFC
@@ -312,7 +310,7 @@ def test_an_unknown_generator_label_raises(tmp_path: Path, word_tokenizer: None)
 
 
 def test_doc_id_is_the_physical_line_index(tmp_path: Path, word_tokenizer: None) -> None:
-    """``doc_id`` is positional, so a blank line must not renumber what follows it."""
+    """`doc_id` is positional, so a blank line must not renumber what follows it."""
     body = json.dumps(row(MIXED, "gpt2", len(HUMAN_SENT)))
     (tmp_path / "en_gpt2_lines.jsonl").write_text(f"{body}\n\n{body}\n", encoding="utf-8")
 

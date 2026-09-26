@@ -1,7 +1,5 @@
 """Shared fixtures."""
 
-from __future__ import annotations
-
 import re
 
 import pytest
@@ -50,7 +48,7 @@ def segmenter() -> Segmenter:
 def word_tokenizer(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stand in for ModernBERT with an offline word tokenizer.
 
-    Any adapter test goes through ``count_tokens``, which downloads a tokenizer
+    Any adapter test goes through `count_tokens`, which downloads a tokenizer
     from Hugging Face. The counts are not what those tests assert on, and a
     network dependency would mean the label and boundary logic goes unchecked in
     CI -- which is where it matters most.

@@ -7,8 +7,6 @@ change -- there is no longer a path where a document skips validation because
 somebody forgot the call.
 """
 
-from __future__ import annotations
-
 import unicodedata
 from typing import Any
 
@@ -154,7 +152,7 @@ def test_missing_key_is_a_schema_error() -> None:
 
 
 def test_unknown_key_is_rejected() -> None:
-    """``extra="forbid"``: a renamed field must not slip through as a new key."""
+    """`extra="forbid"`: a renamed field must not slip through as a new key."""
     payload = orjson.loads(doc_to_json(raid_doc()))
     payload["labl_raw"] = "typo"
     with pytest.raises(SchemaError):
@@ -190,7 +188,7 @@ def test_validate_doc_accepts_valid_documents() -> None:
 
 
 def test_validate_doc_catches_a_model_construct_bypass() -> None:
-    """``model_construct`` skips validation, which is why validate_doc survives."""
+    """`model_construct` skips validation, which is why validate_doc survives."""
     bad = Doc.model_construct(
         doc_id="raid:x",
         text="hello",
@@ -282,7 +280,7 @@ def test_unknown_source_is_rejected() -> None:
 
 
 def test_unknown_split_role_is_rejected() -> None:
-    """``train`` is a Phase 2 split name, not a split_role -- the likely slip."""
+    """`train` is a Phase 2 split name, not a split_role -- the likely slip."""
     with pytest.raises(ValidationError, match="unknown split_role"):
         raid_doc(split_role="train")
 

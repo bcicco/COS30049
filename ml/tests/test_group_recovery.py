@@ -1,6 +1,6 @@
 """SeqXGPT base-document recovery.
 
-SeqXGPT ships no base-document identifier, so ``recover_seqxgpt_groups``
+SeqXGPT ships no base-document identifier, so `recover_seqxgpt_groups`
 reconstructs one from the shared human prefix. Phase 2 splits on the result, so
 under-merging puts two records built from the same human document on opposite
 sides of the calibration split and the per-sentence numbers in Phase 7 are then
@@ -11,8 +11,6 @@ over-merging looks like a slightly smaller group count. So the tests pin the
 merge behaviour, the two thresholds (which were measured, not chosen), and the
 counters the Phase 1 report leans on to show recovery worked.
 """
-
-from __future__ import annotations
 
 import pytest
 
@@ -34,7 +32,7 @@ def base_text(tag: str, n_words: int = 40) -> str:
     """A base document of fixed-width words, so every multiple of 8 is a word edge.
 
     Keeping prefix lengths on word edges means a slice of the base is also a
-    prefix of ``content_key``'s whitespace-collapsed output, and the tests can
+    prefix of `content_key`'s whitespace-collapsed output, and the tests can
     talk about key lengths in characters without arithmetic.
     """
     assert len(tag) == 4, "tag must be 4 chars to keep words 8 chars wide"
@@ -42,9 +40,9 @@ def base_text(tag: str, n_words: int = 40) -> str:
 
 
 def rec(stem: str, base: str, prompt_len: int | None) -> Record:
-    """One record derived from ``base``, with a generator-specific continuation.
+    """One record derived from `base`, with a generator-specific continuation.
 
-    ``prompt_len is None`` is the ``en_human_lines`` case: wholly human, no
+    `prompt_len is None` is the `en_human_lines` case: wholly human, no
     machine continuation at all.
     """
     if prompt_len is None:
@@ -61,7 +59,7 @@ def test_differing_prompt_lens_collapse_to_one_group() -> None:
     """The case index alignment and prefix hashing both fail on.
 
     Row indices are not aligned across files (one dropped row desynchronises
-    everything after it), and ``prompt_len`` differs per generator for the same
+    everything after it), and `prompt_len` differs per generator for the same
     base -- 541/541/1012 was measured -- so hashing a fixed-length prefix
     recovers only about half. Per-record key lengths plus prefix linking is the
     design that handles it.
@@ -125,7 +123,7 @@ def test_a_lone_record_is_its_own_group() -> None:
 def test_a_key_shorter_than_the_link_threshold_does_not_merge() -> None:
     """A 16-character opening is shared by unrelated documents, so it cannot link.
 
-    The floor exists to keep ``content_key`` from being called with a
+    The floor exists to keep `content_key` from being called with a
     non-positive length; it deliberately sits below the link threshold, so a
     floored key is never strong enough to fuse two documents.
     """
@@ -147,7 +145,7 @@ def test_a_key_shorter_than_the_link_threshold_does_not_merge() -> None:
 
 
 def test_prompt_len_zero_does_not_raise() -> None:
-    """``content_key`` rejects a non-positive length, so the floor is load-bearing."""
+    """`content_key` rejects a non-positive length, so the floor is load-bearing."""
     assignment = recover_seqxgpt_groups([("gpt2_lines", "all of this text is machine.", 0)])
 
     assert assignment.stats.n_keys == 1
@@ -161,7 +159,7 @@ def test_a_short_prefix_cap_fuses_documents_sharing_a_boilerplate_opening() -> N
     collisions -- distinct documents sharing a stock opening, fused into
     spurious 12- and 42-member groups. Note the collision counter only sees the
     fusion when the fused records share a file, so a cross-file fusion like this
-    one passes ``is_green``; that is the reason the cap is generous rather than
+    one passes `is_green`; that is the reason the cap is generous rather than
     tuned against the counter.
     """
     opening = "in this paper we investigate the effects of "
@@ -184,7 +182,7 @@ def test_two_records_from_one_file_sharing_a_prefix_are_a_collision() -> None:
     """SeqXGPT holds one record per base per generator, so a repeat means a fusion.
 
     That is the only signal available for over-merging, which is why
-    ``same_file_collisions`` is reported alongside the recovery rate rather than
+    `same_file_collisions` is reported alongside the recovery rate rather than
     the recovery rate alone.
     """
     base = base_text(TAG_A)
@@ -242,7 +240,7 @@ def test_group_ids_are_independent_of_input_order() -> None:
 
 
 def test_group_id_carries_the_source_prefix_the_schema_requires() -> None:
-    """``Doc`` rejects a group_id that does not start with its source."""
+    """`Doc` rejects a group_id that does not start with its source."""
     group_id = recover_seqxgpt_groups([rec("gpt2_lines", base_text(TAG_A), 80)]).group_ids[0]
 
     source, local_id = group_id.split(":", 1)
@@ -309,9 +307,9 @@ def test_is_green_needs_both_recovery_and_a_low_collision_rate() -> None:
 
 
 def test_raid_group_id_is_the_human_source_document() -> None:
-    """``source_id``, never ``adv_source_id``.
+    """`source_id`, never `adv_source_id`.
 
-    ``adv_source_id`` names the clean parent of an adversarial row, so grouping
+    `adv_source_id` names the clean parent of an adversarial row, so grouping
     on it separates a machine generation from the human text it derives from --
     exactly the leak grouping exists to prevent.
     """

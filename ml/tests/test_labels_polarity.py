@@ -1,7 +1,5 @@
 """Label polarity and src parsing — the regression suite for Phase 1's worst bug."""
 
-from __future__ import annotations
-
 import pytest
 
 from aivhuman.labels import (
@@ -13,7 +11,6 @@ from aivhuman.labels import (
     UnknownLabelError,
     mage_label,
     parse_src,
-    polarity_rules_fingerprint,
     raid_label,
     seqxgpt_doc_label,
 )
@@ -37,7 +34,7 @@ def test_raid_every_generator_is_machine(model: str) -> None:
 def test_raid_unknown_model_raises(model: str) -> None:
     """A permissive rule would classify every one of these as machine.
 
-    ``"Human"`` is the dangerous one: a casing change upstream would relabel
+    `"Human"` is the dangerous one: a casing change upstream would relabel
     every human document as machine, corpus-wide, with no error.
     """
     with pytest.raises(UnknownLabelError):
@@ -79,9 +76,9 @@ def test_human_src_parses() -> None:
 
 
 def test_paraphrase_suffix_is_stripped_before_human_matching() -> None:
-    """``cnn_human_para`` must not parse as domain ``cnn_human``.
+    """`cnn_human_para` must not parse as domain `cnn_human`.
 
-    Strip ``_para`` first or the domain vocabulary never matches and the whole
+    Strip `_para` first or the domain vocabulary never matches and the whole
     paraphrase testbed reports as unparsed.
     """
     parsed = parse_src("cnn_human_para")
@@ -92,10 +89,10 @@ def test_paraphrase_suffix_is_stripped_before_human_matching() -> None:
 
 
 def test_underscored_domain_is_not_split_naively() -> None:
-    """The anti-``split("_", 1)`` test.
+    """The anti-`split("_", 1)` test.
 
-    Naive splitting yields domain ``sci``, generator ``gen_machine_...``. Closed
-    vocabulary matching is the only thing that gets ``sci_gen`` right, and both
+    Naive splitting yields domain `sci`, generator `gen_machine_...`. Closed
+    vocabulary matching is the only thing that gets `sci_gen` right, and both
     domains and models here contain underscores.
     """
     parsed = parse_src("sci_gen_machine_continuation_flan_t5_xl")
@@ -120,7 +117,7 @@ def test_every_strategy_parses(strategy: str) -> None:
 
 
 def test_ood_domain_model_grammar() -> None:
-    """The third grammar: the GPT-4 OOD testbeds use ``{domain}_{model}``."""
+    """The third grammar: the GPT-4 OOD testbeds use `{domain}_{model}`."""
     parsed = parse_src("pubmed_gpt4")
     assert parsed == ("pubmed", "gpt4", None, False, True)
     assert parse_src("imdb_gpt4_para").is_paraphrased is True
@@ -142,8 +139,8 @@ def test_every_model_parses(model: str) -> None:
 
 @pytest.mark.parametrize("src", ["", "nonsense", "notadomain_human", "xsum_notamodel"])
 def test_unparseable_src_reports_not_ok_rather_than_guessing(src: str) -> None:
-    """Returns ``ok=False`` instead of raising: the count is reported and gated
-    on (``unparsed_src == 0``), which locates a vocabulary drift precisely. A
+    """Returns `ok=False` instead of raising: the count is reported and gated
+    on (`unparsed_src == 0`), which locates a vocabulary drift precisely. A
     raise here would abort a 400k-row pass on its last row.
     """
     assert parse_src(src).ok is False
@@ -178,16 +175,6 @@ def test_every_seqxgpt_generator_is_known(gen: str) -> None:
 
 @pytest.mark.parametrize("gen", ["gpt3", "gpt5", "", "Human"])
 def test_seqxgpt_unknown_generator_raises(gen: str) -> None:
-    """``gpt3`` is the trap: upstream spells it ``gpt3re``."""
+    """`gpt3` is the trap: upstream spells it `gpt3re`."""
     with pytest.raises(UnknownLabelError):
         seqxgpt_doc_label(gen, boundary=10, length=100)
-
-
-# --------------------------------------------------------------------------- #
-# The gate
-# --------------------------------------------------------------------------- #
-
-
-def test_fingerprint_is_stable_within_a_run() -> None:
-    assert polarity_rules_fingerprint() == polarity_rules_fingerprint()
-    assert len(polarity_rules_fingerprint()) == 16

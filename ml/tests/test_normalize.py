@@ -6,8 +6,6 @@ that changes between runs. Both would surface weeks later as unexplained model
 behaviour.
 """
 
-from __future__ import annotations
-
 import subprocess
 import sys
 import unicodedata
@@ -58,7 +56,7 @@ def test_nfc_split_holds_at_every_cut(s: str) -> None:
     """Sweep every possible boundary, not a sampled few.
 
     For any cut that does not raise, three things must hold: the text is exactly
-    ``nfc(s)``, the returned offset marks the same logical position, and the
+    `nfc(s)`, the returned offset marks the same logical position, and the
     retraction stayed within budget.
     """
     for cut in range(len(s) + 1):
@@ -75,7 +73,7 @@ def test_nfc_split_holds_at_every_cut(s: str) -> None:
 def test_nfc_split_carries_boundary_through_composition() -> None:
     """The silent-slide case, pinned.
 
-    ``"cafe" + combining acute`` is 5 code points; NFC makes it 4. A boundary at
+    `"cafe" + combining acute` is 5 code points; NFC makes it 4. A boundary at
     5 must come back as 4, or every sentence label after it is wrong.
     """
     r = nfc_split("café au lait", 5)
@@ -97,9 +95,9 @@ def test_nfc_split_retracts_off_a_combining_mark() -> None:
 
 
 def test_nfc_split_raises_on_jamo_boundary() -> None:
-    """Hangul jamo compose but report ``combining() == 0``.
+    """Hangul jamo compose but report `combining() == 0`.
 
-    Retraction cannot see this, so only the ``head + tail == nfc(whole)``
+    Retraction cannot see this, so only the `head + tail == nfc(whole)`
     equality catches it. This is the test that justifies keeping that check.
     """
     jamo = "가"  # leading G + vowel A -> composes to a single syllable
@@ -154,7 +152,7 @@ def test_stable_hash_golden() -> None:
 def test_stable_hash_survives_hash_randomisation() -> None:
     """The trap this function exists to avoid.
 
-    Builtin ``hash()`` is salted per process by PYTHONHASHSEED. Had group_id
+    Builtin `hash()` is salted per process by PYTHONHASHSEED. Had group_id
     used it, Phase 2's split-disjointness assertion would fail intermittently
     long after anyone remembered why.
     """
