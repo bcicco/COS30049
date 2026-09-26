@@ -1,6 +1,4 @@
-"""Fetching raw corpus files from Hugging Face and GitHub."""
-
-from __future__ import annotations
+"""Fetching raw corpus files from Hugging Face and GitHub, just a downloader utility, not a data loader."""
 
 import time
 import urllib.parse
@@ -8,8 +6,6 @@ from pathlib import Path
 
 import requests
 from huggingface_hub import hf_hub_download
-
-__all__ = ["fetch_github_raw", "fetch_hf_file"]
 
 _CHUNK = 1 << 20  # 2^20 = 1MB
 
@@ -22,11 +18,11 @@ def fetch_hf_file(
     revision: str | None = None,
     attempts: int = 8,
 ) -> Path:
-    """Download one file from a HF dataset repo into ``dest_dir``."""
+    """Download one file from a HF dataset repo into `dest_dir`."""
 
     # ************* Note **************
-    # Retries on transport errors because they occured in testing
-    #  Each retry resumes from the partial ``.incomplete`` file, so a drop
+    # Retries on transport errors because they occured in testing....
+    #  Each retry resumes from the partial `.incomplete` file, so a drop
     #  doesn't cost the whole transfer
 
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -62,7 +58,7 @@ def fetch_github_raw(
     dest_dir: Path,
     timeout: int = 300,
 ) -> Path:
-    """Download one file from a GitHub repo at ``commit``"""
+    """Download one file from a GitHub repo at `commit`"""
     dest_dir.mkdir(parents=True, exist_ok=True)
     quoted = urllib.parse.quote(path)
     url = f"https://raw.githubusercontent.com/{repo}/{commit}/{quoted}"

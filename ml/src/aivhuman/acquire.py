@@ -1,32 +1,16 @@
-"""Fetch the raw corpus files."""
-
-from __future__ import annotations
+"""Fetch the raw corpus files using util func from base.py"""
 
 from pathlib import Path
 
 from aivhuman.config import RAW_DIR
 from aivhuman.sources.base import fetch_github_raw, fetch_hf_file
 
-__all__ = [
-    "MAGE_ENCODING",
-    "MAGE_FILES",
-    "MAGE_REPO",
-    "RAID_FILE",
-    "RAID_REPO",
-    "SEQXGPT_BENCH_FILES",
-    "SEQXGPT_COMMIT",
-    "SEQXGPT_OOD_FILES",
-    "SEQXGPT_REPO",
-    "fetch_mage",
-    "fetch_raid",
-    "fetch_seqxgpt",
-]
-
 MAGE_REPO = "yaful/MAGE"
 # ----- Notes  ---------
 # **********  IMPORTANT *********
-# Read the CSVs directly  instead of MAGE shipped loading script (DeepfakeTextDetect.py)
-# The script is not compatible with `datasets` 4.x and the repo is not maintained any more.
+# Read the CSVs directly DO NOT USE MAGE LOADING SCRIPT (DeepfakeTextDetect.py)
+# The script is not compatible with datasets 4.x and the repo is not maintained any more.
+# I wasted so much time trying to get it to work
 
 MAGE_FILES: dict[str, str] = {
     "train": "train.csv",
@@ -39,10 +23,6 @@ MAGE_FILES: dict[str, str] = {
 MAGE_ENCODING = "utf-8-sig"
 
 RAID_REPO = "liamdugan/raid"
-# ------- Notes --------
-# Only train.csv is labeled. test.csv is the withheld leaderboard split (for og comp)
-# extra.csv is code/Czech/German, (both are out of scope see assignment 1)
-# Both Raids train/dev split *and* its OOD split both have to be carved out of this one file
 RAID_FILE = "train.csv"
 
 SEQXGPT_REPO = "Jihuai-wpy/SeqXGPT"
@@ -70,12 +50,10 @@ def fetch_mage(revision: str | None = None) -> list[Path]:
     ]
 
 
-def fetch_seqxgpt(commit: str = SEQXGPT_COMMIT, *, include_ood: bool = True) -> list[Path]:
+def fetch_seqxgpt(
+    commit: str = SEQXGPT_COMMIT, *, include_ood: bool = True
+) -> list[Path]:
     """Download SeqXGPT-Bench, and by default the OOD sentence-level set too."""
-    # Note:
-    # skip document-level (no prompt_len) -> no sentence level ground truth
-    # only using this ds for sentence level eval
-
     dest = RAW_DIR / "seqxgpt"
     paths = list(SEQXGPT_BENCH_FILES)
     if include_ood:
