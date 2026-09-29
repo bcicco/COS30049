@@ -90,6 +90,17 @@ strict = true
 module = ["pysbd.*", "tokenizers.*", "pyarrow.*", "scipy.*", "sklearn.*", "wordfreq.*", "pandas.*"]
 ignore_missing_imports = true
 
+# The train extra is not installed in CI, so torch, transformers and spacy resolve to Any there.
+# Their modules must type-check both with and without it.
+[[tool.mypy.overrides]]
+module = ["torch.*", "transformers.*", "spacy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["aivhuman.baselines.*", "aivhuman.features.*", "aivhuman.mil.*"]
+disallow_subclassing_any = false
+disallow_untyped_decorators = false
+
 # PyPI torch wheels are CPU-only on Window so take CUDA builds from the PyTorch index.
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }]

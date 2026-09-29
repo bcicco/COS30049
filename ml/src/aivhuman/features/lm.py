@@ -79,7 +79,7 @@ class ReferenceLM:
         self.token_budget = token_budget
         self.max_context = max_context
         self.carried = carried
-        self.tokenizer = tokenizer or AutoTokenizer.from_pretrained(REFERENCE_LM)  # type: ignore[no-untyped-call]
+        self.tokenizer = tokenizer or AutoTokenizer.from_pretrained(REFERENCE_LM)  # type: ignore[no-untyped-call, unused-ignore]
         if model is None:
             model = AutoModelForCausalLM.from_pretrained(REFERENCE_LM)
         self.model: Any = model

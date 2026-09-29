@@ -84,7 +84,7 @@ class Encoder:
     def __init__(self, cfg: EncoderConfig, device: torch.device | None = None) -> None:
         self.cfg = cfg
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.tokenizer = AutoTokenizer.from_pretrained(BACKBONE)  # type: ignore[no-untyped-call]
+        self.tokenizer = AutoTokenizer.from_pretrained(BACKBONE)  # type: ignore[no-untyped-call, unused-ignore]
         self.model = DocClassifier().to(self.device)
 
     def tokenize(self, docs: list[EvalDoc]) -> list[np.ndarray]:
@@ -132,7 +132,7 @@ class Encoder:
         optimiser = torch.optim.AdamW(
             self.model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
         )
-        schedule = get_linear_schedule_with_warmup(  # type: ignore[no-untyped-call]
+        schedule = get_linear_schedule_with_warmup(  # type: ignore[no-untyped-call, unused-ignore]
             optimiser, int(steps * cfg.warmup_frac), steps
         )
 
