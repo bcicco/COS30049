@@ -25,9 +25,7 @@ def tokenizer(revision: str | None = None) -> Tokenizer:
     return Tokenizer.from_file(path)
 
 
-def assign_to_spans(
-    offsets: list[tuple[int, int]], spans: list[tuple[int, int]]
-) -> list[int]:
+def assign_to_spans(offsets: list[tuple[int, int]], spans: list[tuple[int, int]]) -> list[int]:
     """Span index per token by character midpoint"""
     # NOTE:
     # Returns -1 for tokens outside every spans
