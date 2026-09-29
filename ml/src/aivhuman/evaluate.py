@@ -44,7 +44,8 @@ PAUC_MAX_FPR: Final = 0.1
 N_BOOTSTRAP: Final = 200
 
 COMMENTARY: Final = re.compile(r"\b(?:paraphras|rephras)\w*", re.IGNORECASE)
-# The paraphraser talking about its task instead of doing it ("I cannot paraphrase ..."), use this to drop.
+# The paraphraser talking about its task instead of doing it ("I cannot paraphrase ..."),
+# use this to drop.
 
 
 class EvalDoc(BaseModel):
@@ -91,7 +92,7 @@ class SplitMetrics(BaseModel):
     """Flag rate per `{domain}/{class}` at `threshold_1pct`: TPR for machine, FPR for human."""
 
 
-# --------------------------------------- DATA LOADERS ----------------------------------------------------------------------
+# ---------------------------------------- DATA LOADERS ----------------------------------------
 
 
 def load_manifest(manifests_dir: Path, split: str) -> dict[str, str]:
