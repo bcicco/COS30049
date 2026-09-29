@@ -48,12 +48,8 @@ class DocClassifier(nn.Module):
         self.encoder = AutoModel.from_pretrained(backbone, attn_implementation="sdpa")
         self.head = nn.Linear(self.encoder.config.hidden_size, 1)
 
-    def forward(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor
-    ) -> torch.Tensor:
-        hidden = self.encoder(
-            input_ids=input_ids, attention_mask=attention_mask
-        ).last_hidden_state
+    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        hidden = self.encoder(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state
         mask = attention_mask.unsqueeze(-1).to(hidden.dtype)
         pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1)
         logits: torch.Tensor = self.head(pooled).squeeze(-1)
@@ -87,9 +83,7 @@ class Encoder:
 
     def __init__(self, cfg: EncoderConfig, device: torch.device | None = None) -> None:
         self.cfg = cfg
-        self.device = device or torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = AutoTokenizer.from_pretrained(BACKBONE)  # type: ignore[no-untyped-call]
         self.model = DocClassifier().to(self.device)
 
@@ -115,27 +109,19 @@ class Encoder:
             lengths = [len(x) for x in ids]
             order = sorted(range(len(ids)), key=lambda i: lengths[i])
             for batch in _batches(order, lengths, self.cfg.eval_batch_size):
-                input_ids, mask = _collate(
-                    ids, batch, self.tokenizer.pad_token_id, self.device
-                )
+                input_ids, mask = _collate(ids, batch, self.tokenizer.pad_token_id, self.device)
                 with torch.autocast(self.device.type, dtype=torch.bfloat16):
                     logits = self.model(input_ids, mask)
-                out[[start + i for i in batch]] = (
-                    torch.sigmoid(logits.float()).cpu().numpy()
-                )
+                out[[start + i for i in batch]] = torch.sigmoid(logits.float()).cpu().numpy()
         return out
 
-    def fit(
-        self, train: list[EvalDoc], dev: list[EvalDoc], checkpoint: Path
-    ) -> list[float]:
+    def fit(self, train: list[EvalDoc], dev: list[EvalDoc], checkpoint: Path) -> list[float]:
         """Train, keeping the epoch with the best dev TPR at 1% FPR. Returns dev TPR per epoch."""
         cfg = self.cfg
         rng = random.Random(cfg.seed)
         torch.manual_seed(cfg.seed)
 
-        dev_sample = [
-            dev[i] for i in sample_per_group(dev, cfg.dev_machine_per_group, rng)
-        ]
+        dev_sample = [dev[i] for i in sample_per_group(dev, cfg.dev_machine_per_group, rng)]
         dev_labels = np.array([d.label for d in dev_sample])
         ids = self.tokenize(train)
         lengths = [len(x) for x in ids]
@@ -156,9 +142,7 @@ class Encoder:
             rng.shuffle(chosen)
             n_human = sum(train[i].label == LABEL_HUMAN for i in chosen)
             loss_fn = nn.BCEWithLogitsLoss(
-                pos_weight=torch.tensor(
-                    n_human / (len(chosen) - n_human), device=self.device
-                )
+                pos_weight=torch.tensor(n_human / (len(chosen) - n_human), device=self.device)
             )
             batches = _batches(chosen, lengths, cfg.batch_size)
             rng.shuffle(batches)
@@ -166,15 +150,10 @@ class Encoder:
             self.model.train()
             start, running = time.time(), 0.0
             for step, batch in enumerate(batches, start=1):
-                input_ids, mask = _collate(
-                    ids, batch, self.tokenizer.pad_token_id, self.device
-                )
+                input_ids, mask = _collate(ids, batch, self.tokenizer.pad_token_id, self.device)
                 with torch.autocast(self.device.type, dtype=torch.bfloat16):
                     logits = self.model(input_ids, mask)
-                loss = (
-                    loss_fn(logits.float(), labels[batch].to(self.device))
-                    / cfg.grad_accum
-                )
+                loss = loss_fn(logits.float(), labels[batch].to(self.device)) / cfg.grad_accum
                 loss.backward()
                 running += loss.item() * cfg.grad_accum
                 if step % cfg.grad_accum == 0 or step == len(batches):

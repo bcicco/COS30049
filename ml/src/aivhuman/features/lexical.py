@@ -18,7 +18,8 @@ REPETITION_LOOKBACK: Final = 3
 _CLITIC_RE = re.compile(r"\s+(n't|'s|'re|'ve|'ll|'d|'m)\b")
 _WORD_RE = re.compile(r"[a-z]+(?:'[a-z]+)*")
 
-FUNCTION_WORDS: Final = frozenset("""
+FUNCTION_WORDS: Final = frozenset(
+    """
     a about above after again against all am an and any are as at be because been before
     being below between both but by can could did do does doing down during each few for
     from further had has have having he her here hers herself him himself his how i if in
@@ -29,7 +30,8 @@ FUNCTION_WORDS: Final = frozenset("""
     why will with within without would you your yours yourself yourselves also although
     among around away else ever however may much neither never often perhaps quite rather
     since still though thus together toward towards whether yet
-    """.split())  # noqa: SIM905
+    """.split()
+)  # noqa: SIM905
 
 
 def words(text: str) -> list[str]:
@@ -85,8 +87,6 @@ def span_features(text: str, spans: list[tuple[int, int]]) -> np.ndarray:
             out[i, 1] = sum(map(len, toks)) / len(toks)
             out[i, 2] = sum(t in FUNCTION_WORDS for t in toks) / len(toks)
             out[i, 3] = sum(map(_is_rare, toks)) / len(toks)
-        out[i, 4] = max(
-            (_cosine(bag, b) for b in bags[-REPETITION_LOOKBACK:]), default=0.0
-        )
+        out[i, 4] = max((_cosine(bag, b) for b in bags[-REPETITION_LOOKBACK:]), default=0.0)
         bags.append(bag)
     return out

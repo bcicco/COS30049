@@ -26,9 +26,7 @@ def windows(
     A window function keeps tabs which tokens have been covered
     """
     if not 0 < carried < max_context:
-        raise ValueError(
-            f"carried={carried} must lie in (0, max_context={max_context})"
-        )
+        raise ValueError(f"carried={carried} must lie in (0, max_context={max_context})")
     n = n_tokens + 1
     out = []
     start, score_from = 0, 1
@@ -53,9 +51,7 @@ def span_features(
     counts = np.bincount(owner[inside], minlength=len(spans))
     has = counts > 0
     for col in (LOGPROB, LOGRANK, TOP10, ENTROPY):
-        sums = np.bincount(
-            owner[inside], weights=scores[inside, col], minlength=len(spans)
-        )
+        sums = np.bincount(owner[inside], weights=scores[inside, col], minlength=len(spans))
         out[has, col] = sums[has] / counts[has]
     doc_mean = scores[inside, LOGPROB].mean()
     out[:, 4] = out[:, LOGPROB] - doc_mean
@@ -91,15 +87,9 @@ class ReferenceLM:
         self.model.eval()
         self.bos = self.tokenizer.bos_token_id
 
-    def encode(
-        self, texts: list[str]
-    ) -> tuple[list[list[int]], list[list[tuple[int, int]]]]:
-        enc = self.tokenizer(
-            texts, return_offsets_mapping=True, add_special_tokens=False
-        )
-        return enc["input_ids"], [
-            [tuple(o) for o in offs] for offs in enc["offset_mapping"]
-        ]
+    def encode(self, texts: list[str]) -> tuple[list[list[int]], list[list[tuple[int, int]]]]:
+        enc = self.tokenizer(texts, return_offsets_mapping=True, add_special_tokens=False)
+        return enc["input_ids"], [[tuple(o) for o in offs] for offs in enc["offset_mapping"]]
 
     @torch.no_grad()
     def token_scores(self, ids: list[list[int]]) -> list[np.ndarray]:

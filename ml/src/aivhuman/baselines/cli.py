@@ -19,9 +19,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="aivhuman-baseline", description=__doc__)
     subparsers = parser.add_subparsers()
 
-    p = subparsers.add_parser(
-        "tfidf", help="fit tf-idf + LR on train and score the eval splits"
-    )
+    p = subparsers.add_parser("tfidf", help="fit tf-idf + LR on train and score the eval splits")
     p.set_defaults(handler=_tfidf)
 
     p = subparsers.add_parser("encoder")
@@ -90,9 +88,7 @@ def _encoder(args: argparse.Namespace) -> int:
 def _evaluate(_args: argparse.Namespace) -> int:
     splits = _load(ev.EVAL_SPLITS)
     metrics = [
-        m
-        for name in MODELS
-        for m in ev.evaluate_model(name, config.PREDICTIONS_DIR, splits)
+        m for name in MODELS for m in ev.evaluate_model(name, config.PREDICTIONS_DIR, splits)
     ]
     path = ev.write_report(metrics, config.BASELINES_REPORT_DIR)
     for m in metrics:
