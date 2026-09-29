@@ -97,9 +97,7 @@ class SplitMetrics(BaseModel):
 
 def load_manifest(manifests_dir: Path, split: str) -> dict[str, str]:
     """doc_id -> group_id for one split."""
-    payload: dict[str, str] = orjson.loads(
-        manifest_path(manifests_dir, split).read_bytes()
-    )
+    payload: dict[str, str] = orjson.loads(manifest_path(manifests_dir, split).read_bytes())
     return payload
 
 
@@ -160,11 +158,7 @@ def _read_docs(path: Path, keep: dict[str, str]) -> Iterator[EvalDoc]:
 
 def drop_commentary(docs: Sequence[EvalDoc]) -> tuple[list[EvalDoc], int]:
     """Paraphrased docs in which the paraphraser comments on its task removed, and their count."""
-    kept = [
-        d
-        for d in docs
-        if not (d.breakdown.endswith("_para") and COMMENTARY.search(d.text))
-    ]
+    kept = [d for d in docs if not (d.breakdown.endswith("_para") and COMMENTARY.search(d.text))]
     return kept, len(docs) - len(kept)
 
 
@@ -194,14 +188,10 @@ def write_predictions(path: Path, doc_ids: list[str], scores: np.ndarray) -> Non
 
 def read_predictions(path: Path) -> dict[str, float]:
     table = pq.read_table(path)
-    return dict(
-        zip(table["doc_id"].to_pylist(), table["score"].to_pylist(), strict=True)
-    )
+    return dict(zip(table["doc_id"].to_pylist(), table["score"].to_pylist(), strict=True))
 
 
-def tpr_at_fpr(
-    labels: np.ndarray, scores: np.ndarray, fpr_target: float
-) -> tuple[float, float]:
+def tpr_at_fpr(labels: np.ndarray, scores: np.ndarray, fpr_target: float) -> tuple[float, float]:
     """Highest TPR with FPR at or below the target, and the threshold that achieves it."""
     if len(np.unique(labels)) != 2:
         raise ValueError("TPR at FPR needs both classes present")
@@ -211,9 +201,7 @@ def tpr_at_fpr(
     return float(tpr[i]), float(thresholds[i])
 
 
-def partial_auroc(
-    labels: np.ndarray, scores: np.ndarray, max_fpr: float = PAUC_MAX_FPR
-) -> float:
+def partial_auroc(labels: np.ndarray, scores: np.ndarray, max_fpr: float = PAUC_MAX_FPR) -> float:
     """Standardised (McClish) AUROC over FPR in `[0, max_fpr]`: 0.5 is chance, 1 is perfect."""
     return float(roc_auc_score(labels, scores, max_fpr=max_fpr))
 
@@ -243,9 +231,7 @@ def bootstrap_ci(
             continue
         for out, stat in zip(values, stats, strict=True):
             out.append(stat(y, s))
-    return [
-        (float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5))) for v in values
-    ]
+    return [(float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5))) for v in values]
 
 
 def compute_metrics(
@@ -276,16 +262,12 @@ def compute_metrics(
 
     names = np.array([d.breakdown for d in docs])
     by_generator, by_generator_01 = (
-        {
-            str(name): float((scores[names == name] >= t).mean())
-            for name in sorted(set(names))
-        }
+        {str(name): float((scores[names == name] >= t).mean()) for name in sorted(set(names))}
         for t in (thr1, thr01)
     )
     cells = np.array([f"{d.domain or 'none'}/{LABEL_NAMES[d.label]}" for d in docs])
     by_domain = {
-        str(cell): float((scores[cells == cell] >= thr1).mean())
-        for cell in sorted(set(cells))
+        str(cell): float((scores[cells == cell] >= thr1).mean()) for cell in sorted(set(cells))
     }
     return SplitMetrics(
         model=model,
@@ -322,9 +304,7 @@ def evaluate_model(
     return out
 
 
-def write_report(
-    metrics: list[SplitMetrics], directory: Path, stem: str = "baselines"
-) -> Path:
+def write_report(metrics: list[SplitMetrics], directory: Path, stem: str = "baselines") -> Path:
     """Write the full results as JSON."""
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{stem}.json"
