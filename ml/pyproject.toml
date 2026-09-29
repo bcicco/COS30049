@@ -35,10 +35,23 @@ train = [
     "scikit-learn>=1.5",
     "accelerate>=1.0",
     "pandas>=2.2,<3",
+    # Sentence features.
+    "spacy>=3.8,<4",
+    "en-core-web-sm",
+    "wordfreq>=3.1",
+    # Reliability diagrams.
+    "matplotlib>=3.9",
+]
+serve = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
 ]
 
 [project.scripts]
 aivhuman-data = "aivhuman.cli:main"
+aivhuman-baseline = "aivhuman.baselines.cli:main"
+aivhuman-mil = "aivhuman.mil.cli:main"
+aivhuman-serve = "aivhuman.serve:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -71,8 +84,18 @@ python_version = "3.13"
 packages = ["aivhuman"]
 strict = true
 
-# pysbd (last released 2021), tokenizers and pyarrow ship no type stubs.
-# Silencing them per-module keeps `strict` meaningful for our own code.
+# pysbd, tokenizers, pyarrow, scipy, scikit-learn, wordfreq and pandas ship no type stubs.
+# Silencing them per-module keeps strict meaningful for our own code.
 [[tool.mypy.overrides]]
-module = ["pysbd.*", "tokenizers.*", "pyarrow.*"]
+module = ["pysbd.*", "tokenizers.*", "pyarrow.*", "scipy.*", "sklearn.*", "wordfreq.*", "pandas.*"]
 ignore_missing_imports = true
+
+# PyPI torch wheels are CPU-only on Window so take CUDA builds from the PyTorch index.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

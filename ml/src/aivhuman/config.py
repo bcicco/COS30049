@@ -21,10 +21,18 @@ RAW_DIR: Final = DATA_ROOT / "raw"
 INTERIM_DIR: Final = DATA_ROOT / "interim"
 PROCESSED_DIR: Final = DATA_ROOT / "processed" / "phase1"
 HF_DIR: Final = DATA_ROOT / "hf"
+PREDICTIONS_DIR: Final = DATA_ROOT / "predictions"
+CHECKPOINTS_DIR: Final = DATA_ROOT / "checkpoints"
+FEATURES_DIR: Final = DATA_ROOT / "features"
 
 REPORTS_DIR: Final = ML_ROOT / "reports" / "phase1"
 SPLITS_REPORT: Final = ML_ROOT / "reports" / "phase2" / "phase2_splits.json"
 MANIFESTS_DIR: Final = ML_ROOT / "manifests"
+BASELINES_REPORT_DIR: Final = ML_ROOT / "reports" / "phase3"
+MIL_REPORT_DIR: Final = ML_ROOT / "reports" / "phase4"
+ROBUSTNESS_REPORT_DIR: Final = ML_ROOT / "reports" / "phase5"
+CALIBRATION_REPORT_DIR: Final = ML_ROOT / "reports" / "phase6"
+EVALUATION_REPORT_DIR: Final = ML_ROOT / "reports" / "phase7"
 
 
 def configure_stdio() -> None:
