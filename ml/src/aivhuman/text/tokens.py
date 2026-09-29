@@ -25,6 +25,29 @@ def tokenizer(revision: str | None = None) -> Tokenizer:
     return Tokenizer.from_file(path)
 
 
+def assign_to_spans(
+    offsets: list[tuple[int, int]], spans: list[tuple[int, int]]
+) -> list[int]:
+    """Span index per token by character midpoint"""
+    # NOTE:
+    # Returns -1 for tokens outside every spans
+
+    out = [-1] * len(offsets)
+    si = 0
+    for ti, (start, end) in enumerate(offsets):
+        if end <= start:
+            # Zero-width tokens carry no characters to attribute.
+            continue
+        mid = (start + end) / 2.0
+        while si < len(spans) and spans[si][1] <= mid:
+            si += 1
+        if si >= len(spans):
+            break
+        if spans[si][0] <= mid:
+            out[ti] = si
+    return out
+
+
 def count_tokens(
     text: str, spans: list[tuple[int, int]], revision: str | None = None
 ) -> tuple[int, list[int]]:
@@ -35,21 +58,7 @@ def count_tokens(
 
     enc = tokenizer(revision).encode(text, add_special_tokens=False)
     counts = [0] * len(spans)
-    if not spans:
-        return len(enc.ids), counts
-
-    # Both tokens and spans are in ascending order, so one forward walk suffices.
-    si = 0
-    for start, end in enc.offsets:
-        if end <= start:
-            # Zero-width tokens carry no characters to attribute.
-            continue
-        mid = (start + end) / 2.0
-        while si < len(spans) and spans[si][1] <= mid:
-            si += 1
-        if si >= len(spans):
-            break
-        if spans[si][0] <= mid:
+    for si in assign_to_spans(enc.offsets, spans):
+        if si >= 0:
             counts[si] += 1
-
     return len(enc.ids), counts

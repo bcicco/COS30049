@@ -5,11 +5,10 @@ import time
 from collections.abc import Sequence
 
 import orjson
+import torch
 
 from aivhuman import config
 from aivhuman import evaluate as ev
-
-import torch
 from aivhuman.baselines import encoder
 
 MODELS = ("tfidf-lr", "modernbert-doc")
