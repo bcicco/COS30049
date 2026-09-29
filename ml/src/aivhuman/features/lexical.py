@@ -209,7 +209,7 @@ def mattr(tokens: list[str], window: int = MATTR_WINDOW) -> float:
 
 @functools.lru_cache(maxsize=500_000)
 def _is_rare(word: str) -> bool:
-    return zipf_frequency(word, "en") < RARE_ZIPF
+    return bool(zipf_frequency(word, "en") < RARE_ZIPF)
 
 
 # a.b = |a||b|*cos(theta)
