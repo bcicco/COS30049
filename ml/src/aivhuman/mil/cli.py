@@ -23,9 +23,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     subparsers = parser.add_subparsers()
 
     p = subparsers.add_parser("extract")
-    p.add_argument(
-        "--split", nargs="+", default=list(FEATURE_SPLITS), choices=FEATURE_SPLITS
-    )
+    p.add_argument("--split", nargs="+", default=list(FEATURE_SPLITS), choices=FEATURE_SPLITS)
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--token-budget", type=int, default=2048)
     p.add_argument("--workers", type=int, default=None)
@@ -61,16 +59,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--run", default=None, help=RUN_HELP)
     p.set_defaults(handler=_train)
 
-    p = subparsers.add_parser(
-        "predict", help="score every split with the saved checkpoint"
-    )
+    p = subparsers.add_parser("predict", help="score every split with the saved checkpoint")
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--run", default=None, help=RUN_HELP)
     p.set_defaults(handler=_predict)
 
-    p = subparsers.add_parser(
-        "evaluate", help="metrics table for the MIL model and baselines"
-    )
+    p = subparsers.add_parser("evaluate", help="metrics table for the MIL model and baselines")
     p.add_argument("--models", nargs="+", default=list(EVAL_MODELS))
     p.add_argument("--report-dir", type=Path, default=config.MIL_REPORT_DIR)
     p.set_defaults(handler=_evaluate)
@@ -89,9 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--run", default=None, help=RUN_HELP)
     p.set_defaults(handler=_calibrate)
 
-    p = subparsers.add_parser(
-        "report", help="the evaluation report for a calibrated run"
-    )
+    p = subparsers.add_parser("report", help="the evaluation report for a calibrated run")
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--run", default=None, help=RUN_HELP)
     p.add_argument("--baselines", nargs="+", default=list(REPORT_BASELINES))
@@ -116,9 +108,7 @@ def _extract(args: argparse.Namespace) -> int:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ref = lm.ReferenceLM(device, token_budget=args.token_budget)
     out_dir = config.FEATURES_DIR / ("smoke" if args.limit else "")
-    with Pool(
-        args.workers or config.workers(), initializer=extract.init_worker
-    ) as pool:
+    with Pool(args.workers or config.workers(), initializer=extract.init_worker) as pool:
         for split in args.split:
             _extract_split(split, args.limit, out_dir, ref, pool)
     return 0
@@ -135,17 +125,13 @@ def _splice(args: argparse.Namespace) -> int:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ref = lm.ReferenceLM(device, token_budget=args.token_budget)
     out_dir = config.FEATURES_DIR / ("smoke" if args.limit else "")
-    with Pool(
-        args.workers or config.workers(), initializer=extract.init_worker
-    ) as pool:
+    with Pool(args.workers or config.workers(), initializer=extract.init_worker) as pool:
         for split in ("train-adv", "dev-adv") if args.adv else ("train", "dev"):
             path = out_dir / f"{split}-spliced.parquet"
             if path.exists():
                 print(f"{split}-spliced: exists, skipping", flush=True)
                 continue
-            docs = splice.build(
-                load_span_docs(config.PROCESSED_DIR, config.MANIFESTS_DIR, split)
-            )
+            docs = splice.build(load_span_docs(config.PROCESSED_DIR, config.MANIFESTS_DIR, split))
             if args.limit:
                 docs = random.Random(0).sample(docs, min(args.limit, len(docs)))
             print(f"{split}-spliced: {len(docs):,} docs", flush=True)
@@ -154,9 +140,7 @@ def _splice(args: argparse.Namespace) -> int:
     return 0
 
 
-def _extract_split(
-    split: str, limit: int | None, out_dir: Path, ref: Any, pool: Any
-) -> None:
+def _extract_split(split: str, limit: int | None, out_dir: Path, ref: Any, pool: Any) -> None:
     from aivhuman.features import extract
     from aivhuman.features.load import load_span_docs
 
@@ -168,9 +152,7 @@ def _extract_split(
     docs = load_span_docs(config.PROCESSED_DIR, config.MANIFESTS_DIR, split)
     if limit:
         docs = random.Random(0).sample(docs, min(limit, len(docs)))
-    print(
-        f"{split}: {len(docs):,} docs loaded in {time.time() - start:.0f}s", flush=True
-    )
+    print(f"{split}: {len(docs):,} docs loaded in {time.time() - start:.0f}s", flush=True)
     rows = extract.extract(docs, path, ref, pool)
     print(f"{split}: {rows:,} spans in {time.time() - start:.0f}s", flush=True)
 
@@ -194,9 +176,7 @@ def _dirs(smoke: bool, run: str | None = None) -> tuple[Path, Path, Path, Path]:
     otherwise the checkpoint is `mil/model.pt` and reports go to the MIL report directory.
     """
     sub = "smoke" if smoke else ""
-    reports = (
-        config.ROBUSTNESS_REPORT_DIR / sub / run if run else config.MIL_REPORT_DIR / sub
-    )
+    reports = config.ROBUSTNESS_REPORT_DIR / sub / run if run else config.MIL_REPORT_DIR / sub
     return (
         config.FEATURES_DIR / sub,
         config.PREDICTIONS_DIR / sub,
@@ -222,9 +202,7 @@ def _training_bags(features: Path, mix: str) -> tuple[Any, Any, Any, Any]:
         train_bags = train_bags.concat(spliced)
     if mix == "spliced-adv":
         adv = load_bags(features / "train-adv.parquet", names).standardised(std)
-        adv_spliced = load_bags(
-            features / "train-adv-spliced.parquet", names
-        ).standardised(std)
+        adv_spliced = load_bags(features / "train-adv-spliced.parquet", names).standardised(std)
         train_bags = train_bags.concat(adv.subset(adv.labels == 0)).concat(adv_spliced)
     dev_bags = load_bags(features / "dev.parquet", names).standardised(std)
     sent_bags = _calibration_slice(features, std, validation=True)
@@ -246,9 +224,7 @@ def _train(args: argparse.Namespace) -> int:
     best = None
     results = []
     if args.kept:
-        configs = [
-            train.KEPT.model_copy(update={"crf": args.crf, "crf_lr": args.crf_lr})
-        ]
+        configs = [train.KEPT.model_copy(update={"crf": args.crf, "crf_lr": args.crf_lr})]
     else:
         configs = train.sweep_configs(tuple(args.sentence_weight), crf=args.crf)
     for cfg in configs:
@@ -272,15 +248,11 @@ def _train(args: argparse.Namespace) -> int:
     dev_spliced = features / "dev-spliced.parquet"
     raid_sent = None
     if dev_spliced.exists():
-        raid_sent = train.sentence_auroc(
-            best[0], load_bags(dev_spliced, names).standardised(std)
-        )
+        raid_sent = train.sentence_auroc(best[0], load_bags(dev_spliced, names).standardised(std))
         print(f"best: sentence AUROC on dev-spliced (RAID) {raid_sent:.4f}", flush=True)
     train.save(checkpoint, best[0], std, best[1])
     _sweep_report(results, reports / "sweep.json", raid_sent)
-    print(
-        f"wrote {predict.weights_report(best[0], std, best[1], reports / 'weights.json')}"
-    )
+    print(f"wrote {predict.weights_report(best[0], std, best[1], reports / 'weights.json')}")
     return 0
 
 
@@ -326,15 +298,11 @@ def _evaluate(args: argparse.Namespace) -> int:
 
     splits = ev.load_splits(config.PROCESSED_DIR, config.MANIFESTS_DIR, ev.EVAL_SPLITS)
     metrics = [
-        m
-        for name in args.models
-        for m in ev.evaluate_model(name, config.PREDICTIONS_DIR, splits)
+        m for name in args.models for m in ev.evaluate_model(name, config.PREDICTIONS_DIR, splits)
     ]
     path = ev.write_report(metrics, args.report_dir, stem="metrics")
     for m in metrics:
-        print(
-            f"{m.model:>15} {m.split:>10}  TPR@1%FPR {m.tpr_at_1pct_fpr:.4f}  {m.auroc:.4f}"
-        )
+        print(f"{m.model:>15} {m.split:>10}  TPR@1%FPR {m.tpr_at_1pct_fpr:.4f}  {m.auroc:.4f}")
     print(f"wrote {path}")
     return 0
 
@@ -345,9 +313,7 @@ def _faithfulness(args: argparse.Namespace) -> int:
     features, _, checkpoint, reports = _dirs(args.smoke, args.run)
     model, std = train.load(checkpoint)
     calib = _calibration_slice(features, std, validation=False)
-    path = predict.faithfulness_report(
-        model, calib, std.names, reports / "faithfulness.json"
-    )
+    path = predict.faithfulness_report(model, calib, std.names, reports / "faithfulness.json")
     print(path.read_text(encoding="utf-8"))
     return 0
 
@@ -361,9 +327,7 @@ def _robustness(args: argparse.Namespace) -> int:
         model, std = train.load(config.CHECKPOINTS_DIR / run / "model.pt")
         runs[run] = robustness.Scorer(model, std, features)
     raid = robustness.raid_contrasts(config.PROCESSED_DIR, config.MANIFESTS_DIR)
-    mage, commentary = robustness.mage_contrasts(
-        config.PROCESSED_DIR, config.MANIFESTS_DIR
-    )
+    mage, commentary = robustness.mage_contrasts(config.PROCESSED_DIR, config.MANIFESTS_DIR)
     train_bags, dev_bags, sent_bags, std = _training_bags(features, "spliced")
     groups = robustness.group_only_models(train_bags, dev_bags, sent_bags, std.names)
     path = config.ROBUSTNESS_REPORT_DIR / "robustness.md"
@@ -382,9 +346,7 @@ def _sentence_splits(features: Path, model: Any, std: Any) -> tuple[Any, Any, An
 
     calib_path = features / "seqxgpt-calib.parquet"
     calib_groups = load_manifest(config.MANIFESTS_DIR, "seqxgpt-calib")
-    doc_ids = sorted(
-        set(pq.read_table(calib_path, columns=["doc_id"])["doc_id"].to_pylist())
-    )
+    doc_ids = sorted(set(pq.read_table(calib_path, columns=["doc_id"])["doc_id"].to_pylist()))
     in_val = in_sentence_validation(doc_ids, calib_groups)
     keep = [d for d, v in zip(doc_ids, in_val, strict=True) if not v]
     fit = calibrate.load_spans(
@@ -444,9 +406,7 @@ def _report(args: argparse.Namespace) -> int:
     run = args.run or model.name
     cal = calibrate.Calibrator.load(checkpoint.parent / "calibrator.json")
 
-    splits = ev.load_splits(
-        config.PROCESSED_DIR, config.MANIFESTS_DIR, report.DOC_SPLITS
-    )
+    splits = ev.load_splits(config.PROCESSED_DIR, config.MANIFESTS_DIR, report.DOC_SPLITS)
     splits["mage-para"], commentary = ev.drop_commentary(splits["mage-para"])
     doc_metrics = []
     for name in [run, *args.baselines]:
@@ -475,9 +435,7 @@ def _report(args: argparse.Namespace) -> int:
     ece_splits = [test] if dev_spliced is None else [test, dev_spliced]
     cells = [c for s in ece_splits for c in calibrate.evaluate(cal, s)]
     style_cells = calibrate.evaluate(cal, test, by_style=True)
-    path = report.write(
-        run, doc_metrics, commentary, sent, straddling, cells, style_cells, out_dir
-    )
+    path = report.write(run, doc_metrics, commentary, sent, straddling, cells, style_cells, out_dir)
     for p in sent.points:
         c = p.cells[-1]
         print(
