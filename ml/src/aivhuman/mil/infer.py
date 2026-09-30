@@ -41,14 +41,8 @@ class Thresholds(BaseModel):
     @classmethod
     def from_report(cls, path: Path, run: str) -> "Thresholds":
         payload = orjson.loads(path.read_bytes())
-        point = next(
-            p for p in payload["sentences"]["points"] if p["name"] == SENTENCE_POINT
-        )
-        doc = next(
-            m
-            for m in payload["documents"]
-            if m["model"] == run and m["split"] == DOC_SPLIT
-        )
+        point = next(p for p in payload["sentences"]["points"] if p["name"] == SENTENCE_POINT)
+        doc = next(m for m in payload["documents"] if m["model"] == run and m["split"] == DOC_SPLIT)
         return cls(
             sentence=point["threshold"],
             sentence_recall=point["cells"][-1]["recall"],
@@ -122,9 +116,7 @@ class ScoreResponse(BaseModel):
     caveats: list[str]
 
 
-def regions(
-    flagged: list[bool], spans: list[tuple[int, int]], probs: np.ndarray
-) -> list[Region]:
+def regions(flagged: list[bool], spans: list[tuple[int, int]], probs: np.ndarray) -> list[Region]:
     out: list[Region] = []
     run: list[int] = []
     for i, f in enumerate([*flagged, False]):
@@ -157,8 +149,7 @@ def build_response(
     """Assemble the response from per-sentence scores; no model is involved."""
     too_short = [n < SHORT_TOKENS for n in n_tokens]
     flagged = [
-        bool(p >= thresholds.sentence) and not s
-        for p, s in zip(probs, too_short, strict=True)
+        bool(p >= thresholds.sentence) and not s for p, s in zip(probs, too_short, strict=True)
     ]
     sentences = [
         SentenceScore(
@@ -215,9 +206,7 @@ class Scorer:
     0.05 nats; served scores differ from stored ones by that noise, not by a pipeline change.
     """
 
-    def __init__(
-        self, checkpoint: Path, report: Path, run: str, device: str = "cpu"
-    ) -> None:
+    def __init__(self, checkpoint: Path, report: Path, run: str, device: str = "cpu") -> None:
         import torch
 
         from aivhuman.features import extract, lm
@@ -271,9 +260,7 @@ class Scorer:
             )
             s = score(self.model, bags)
             contributions = explain(self.model, self.std, x, TOP_CONTRIBUTIONS)
-        probs = self.calibrator.apply(
-            s.sentence_logits.astype(np.float64), np.asarray(n_tokens)
-        )
+        probs = self.calibrator.apply(s.sentence_logits.astype(np.float64), np.asarray(n_tokens))
         doc_prob = float(1.0 / (1.0 + np.exp(-s.doc_logits[0])))
         return build_response(
             text,
