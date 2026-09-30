@@ -132,3 +132,22 @@ def stable_hash(s: str, n: int = 16) -> str:
     if not 1 <= n <= 32:
         raise ValueError(f"n must be in [1, 32], got {n}")
     return hashlib.blake2b(s.encode("utf-8"), digest_size=16).hexdigest()[:n]
+
+
+# Cyrillic and Greek lookalikes of Latin letters: the set RAID's homoglyph attack substitutes.
+_HOMOGLYPH_TABLE = str.maketrans(
+    "\u0430\u0435\u0456\u043e\u0441\u0440\u0443\u0445"  # Cyrillic lowercase
+    "\u0410\u0412\u0415\u041a\u041c\u041d"
+    "\u041e\u0420\u0421\u0422\u0425\u0406"  # Cyrillic capitals
+    "\u0391\u0392\u0395\u0396\u0397\u0399\u039a"
+    "\u039c\u039d\u039f\u03a1\u03a4\u03a7",  # Greek capitals
+    "aeiocpyxABEKMHOPCTXIABEZHIKMNOPTX",
+)
+_SPACE_RUN_RE = re.compile(r"[^\S\n]{2,}")
+
+
+def defang(s: str) -> str:
+    """Undo character-level evasion: drop format characters (zero-width spaces and the like),
+    fold Latin homoglyphs, and collapse runs of horizontal whitespace. Newlines are kept."""
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Cf")
+    return _SPACE_RUN_RE.sub(" ", s.translate(_HOMOGLYPH_TABLE))

@@ -17,6 +17,7 @@ from aivhuman.text.normalize import (
     CompositionStraddlesBoundary,
     collapse_ws,
     content_key,
+    defang,
     is_nfc,
     nfc,
     nfc_split,
@@ -168,3 +169,17 @@ def test_stable_hash_survives_hash_randomisation() -> None:
         )
         outs.add(proc.stdout.strip())
     assert len(outs) == 1, f"hash varied across PYTHONHASHSEED: {outs}"
+
+
+def test_defang_undoes_character_level_attacks() -> None:
+    assert defang("I\u200bm\u200ba\u200bg\u200be") == "Image"
+    assert (
+        defang("\u0399m\u0430g\u0435 s\u0435gm\u0435nt\u0430t\u0456\u043en") == "Image segmentation"
+    )
+    assert defang("of  individual   image \t patches") == "of individual image patches"
+
+
+def test_defang_keeps_newlines_and_ordinary_text() -> None:
+    s = "Line one.\n\nLine two — with “quotes”, café, \u03b1 = 0.5 and 日本語."
+    assert defang(s) == s
+    assert defang("end.  \n  next") == "end. \n next"
