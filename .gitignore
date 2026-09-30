@@ -13,6 +13,8 @@ wheels/
 # they stay tracked. Do not add a global *.jsonl rule -- it would swallow
 # ml/tests/fixtures/.
 **/data/
+**/reports
+**.json
 # Tool caches
 .pytest_cache/
 .ruff_cache/
