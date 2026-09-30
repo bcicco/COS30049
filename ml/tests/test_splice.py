@@ -1,5 +1,9 @@
 """Spliced mixed documents: text, offsets and sentence labels line up."""
 
+import pytest
+
+pytest.importorskip("sklearn")
+
 from aivhuman.features.load import SpanDoc
 from aivhuman.features.splice import build, splice
 
