@@ -88,6 +88,7 @@ def test_every_subcommand_is_reachable() -> None:
     names = sorted(next(iter(actions)).choices)
     assert names == [
         "acquire",
+        "attacks",
         "derive",
         "ingest",
         "peek",
