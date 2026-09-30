@@ -14,7 +14,6 @@ from aivhuman.evaluate import SPLIT_SOURCE
 FEATURE_SPLITS = tuple(SPLIT_SOURCE)
 EVAL_MODELS = ("tfidf-lr", "modernbert-doc", "mil-linear", "mil-gam")
 REPORT_BASELINES = ("tfidf-lr", "modernbert-doc", "mil-gam")
-RUN_HELP = "named run with its own checkpoint, predictions and reports"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -56,22 +55,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--crf", action="store_true")
     p.add_argument("--kept", action="store_true")
     p.add_argument("--crf-lr", type=float, default=1e-2)
-    p.add_argument("--run", default=None, help=RUN_HELP)
+    p.add_argument("--run", default=None)
     p.set_defaults(handler=_train)
 
-    p = subparsers.add_parser("predict", help="score every split with the saved checkpoint")
+    p = subparsers.add_parser("predict")
     p.add_argument("--smoke", action="store_true")
-    p.add_argument("--run", default=None, help=RUN_HELP)
+    p.add_argument("--run", default=None)
     p.set_defaults(handler=_predict)
 
-    p = subparsers.add_parser("evaluate", help="metrics table for the MIL model and baselines")
+    p = subparsers.add_parser("evaluate")
     p.add_argument("--models", nargs="+", default=list(EVAL_MODELS))
     p.add_argument("--report-dir", type=Path, default=config.MIL_REPORT_DIR)
     p.set_defaults(handler=_evaluate)
 
     p = subparsers.add_parser("faithfulness")
     p.add_argument("--smoke", action="store_true")
-    p.add_argument("--run", default=None, help=RUN_HELP)
+    p.add_argument("--run", default=None)
     p.set_defaults(handler=_faithfulness)
 
     p = subparsers.add_parser("robustness")
@@ -80,12 +79,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     p = subparsers.add_parser("calibrate")
     p.add_argument("--smoke", action="store_true")
-    p.add_argument("--run", default=None, help=RUN_HELP)
+    p.add_argument("--run", default=None)
     p.set_defaults(handler=_calibrate)
 
-    p = subparsers.add_parser("report", help="the evaluation report for a calibrated run")
+    p = subparsers.add_parser("report")
     p.add_argument("--smoke", action="store_true")
-    p.add_argument("--run", default=None, help=RUN_HELP)
+    p.add_argument("--run", default=None)
     p.add_argument("--baselines", nargs="+", default=list(REPORT_BASELINES))
     p.set_defaults(handler=_report)
 
@@ -330,7 +329,7 @@ def _robustness(args: argparse.Namespace) -> int:
     mage, commentary = robustness.mage_contrasts(config.PROCESSED_DIR, config.MANIFESTS_DIR)
     train_bags, dev_bags, sent_bags, std = _training_bags(features, "spliced")
     groups = robustness.group_only_models(train_bags, dev_bags, sent_bags, std.names)
-    path = config.ROBUSTNESS_REPORT_DIR / "robustness.md"
+    path = config.ROBUSTNESS_REPORT_DIR / "robustness.json"
     print(f"wrote {robustness.report(runs, raid, mage, commentary, groups, path)}")
     return 0
 

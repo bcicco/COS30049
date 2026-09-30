@@ -1,4 +1,4 @@
-"""Data command line: acquire, derive, peek, ingest, verify, report, split."""
+"""Data command line: acquire, derive, peek, ingest, verify, report, split, attacks."""
 
 import argparse
 import random
@@ -13,7 +13,13 @@ from aivhuman import acquire, config
 from aivhuman import report as report_mod
 from aivhuman import splits as splits_mod
 from aivhuman import verify as verify_mod
-from aivhuman.ingest import ingest_mage, ingest_raid, ingest_seqxgpt, write_sidecar
+from aivhuman.ingest import (
+    ingest_mage,
+    ingest_raid,
+    ingest_raid_attacks,
+    ingest_seqxgpt,
+    write_sidecar,
+)
 from aivhuman.labels import mage_label, raid_label
 from aivhuman.schema import label_name
 from aivhuman.sources import mage, raid, seqxgpt
@@ -40,33 +46,38 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aivhuman-data", description=__doc__)
     subparsers = parser.add_subparsers()
 
-    p = subparsers.add_parser("acquire", help="download the raw corpora")
+    p = subparsers.add_parser("acquire")
     p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "all"], default="all")
     p.set_defaults(handler=_acquire)
 
-    p = subparsers.add_parser("derive", help="scan RAID's 11.8 GB CSV into parquet, once")
-    p.add_argument("--no-attacks", action="store_true", help="skip the Phase 5 partitions")
+    p = subparsers.add_parser("derive")
+    p.add_argument("--no-attacks", action="store_true")
     p.set_defaults(handler=_derive)
 
-    p = subparsers.add_parser("peek", help="print stratified rows for a human to read")
+    p = subparsers.add_parser("peek")
     p.add_argument("--rows", type=int, default=PEEK_ROWS)
     p.add_argument("--chars", type=int, default=160)
     p.set_defaults(handler=_peek)
 
-    p = subparsers.add_parser("ingest", help="segment the corpora into JSONL")
+    p = subparsers.add_parser("ingest")
     p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "all"], default="all")
     p.add_argument("--workers", type=int, default=None)
     p.set_defaults(handler=_ingest)
 
-    p = subparsers.add_parser("verify", help="re-read the JSONL and re-assert every invariant")
+    p = subparsers.add_parser("verify")
     p.set_defaults(handler=_verify)
 
-    p = subparsers.add_parser("report", help="write the Phase 1 report CSVs")
+    p = subparsers.add_parser("report")
     p.add_argument("--skip-verify", action="store_true")
     p.set_defaults(handler=_report)
 
-    p = subparsers.add_parser("split", help="write the grouped split manifests")
+    p = subparsers.add_parser("split")
     p.set_defaults(handler=_split)
+
+    p = subparsers.add_parser("attacks")
+    p.add_argument("--workers", type=int, default=None)
+    p.add_argument("--limit", type=int, default=None)
+    p.set_defaults(handler=_attacks)
 
     return parser
 
@@ -247,6 +258,43 @@ def _split(_args: argparse.Namespace) -> int:
     for reason, n in stats.dropped.items():
         print(f"  dropped {reason}: {n:,}")
     print(f"wrote {config.MANIFESTS_DIR} and {config.SPLITS_REPORT}")
+    return 0
+
+
+def _attacks(args: argparse.Namespace) -> int:
+    """Attacked variants of the extracted clean documents, plus their manifests."""
+    from aivhuman.evaluate import load_manifest
+    from aivhuman.sources import raid_attacks
+
+    groups = {
+        parent: load_manifest(config.MANIFESTS_DIR, parent)
+        for parent in raid_attacks.ADV_PARENT.values()
+    }
+    wanted = raid_attacks.select(config.FEATURES_DIR, groups, args.limit)
+    smoke = config.INTERIM_DIR / "attacks-smoke"
+    out = smoke if args.limit else config.PROCESSED_DIR
+    manifest_dir = smoke if args.limit else config.MANIFESTS_DIR / "attacks"
+    manifests: dict[str, dict[str, str]] = {adv: {} for adv in raid_attacks.ADV_PARENT}
+
+    def tapped() -> Any:
+        for row in raid_attacks.load_rows(config.INTERIM_DIR / "raid" / "by_attack", wanted):
+            adv, group = wanted[(row.adv_source_id, row.attack)]
+            manifests[adv][f"raid:{row.id}"] = group
+            yield row
+
+    out.mkdir(parents=True, exist_ok=True)
+    result = ingest_raid_attacks(tapped(), out, workers=args.workers, progress=True)
+    write_sidecar(result, out)
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    for adv, manifest in manifests.items():
+        path = manifest_dir / f"{adv}.json"
+        path.write_bytes(orjson.dumps(dict(sorted(manifest.items())), option=orjson.OPT_INDENT_2))
+        print(f"{adv:>13}: {len(manifest):>7,} docs  -> {path}")
+    missing = len(wanted) - sum(len(m) for m in manifests.values())
+    print(
+        f"{result.docs:,} docs in {result.elapsed_s / 60:.1f} min; "
+        f"{missing:,} requested rows missing"
+    )
     return 0
 
 

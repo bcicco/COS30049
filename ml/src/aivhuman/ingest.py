@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict
 
 from aivhuman import config
 from aivhuman.schema import Doc, doc_to_json
-from aivhuman.sources import mage, raid, seqxgpt
+from aivhuman.sources import mage, raid, raid_attacks, seqxgpt
 from aivhuman.sources.raid_parquet import CLEAN_FILE
 from aivhuman.text.segment import Segmenter, SegmentStats
 from aivhuman.text.tokens import TOKENIZER_REPO, tokenizer
@@ -55,6 +55,7 @@ OUTPUT_NAMES: Final = {
     "raid": "raid.jsonl",
     "mage": "mage.jsonl",
     "seqxgpt": "seqxgpt.jsonl",
+    "raid-attacks": "raid-attacks.jsonl",
 }
 
 # Written while a pass runs, renamed on success to prevent confusion between success / trunc. runs
@@ -119,6 +120,7 @@ _FALLBACK_SEG: Segmenter | None = None
 _BUILDERS: Final[dict[str, Callable[[Any, Segmenter], Doc | None]]] = {
     "mage": mage.to_doc,
     "raid": raid.to_doc,
+    "raid-attacks": raid_attacks.to_doc,
 }
 
 
@@ -462,6 +464,45 @@ def ingest_raid(
         batch_size=batch_size,
         integrity_ok=stats.integrity_ok,
         is_green=stats.is_green,
+        adapter_stats=stats.as_dict(),
+        segment_stats=segment_stats,
+        timeouts=timeouts,
+        forced=forced,
+    )
+
+
+def ingest_raid_attacks(
+    rows: Iterable[raid.RawRow],
+    out_dir: Path,
+    *,
+    workers: int | None = None,
+    batch_size: int = BATCH_SIZE,
+    progress: bool = False,
+) -> IngestResult:
+    """Segment attacked RAID rows. No integrity gate: attacks are the point here."""
+    n_workers = config.workers() if workers is None else workers
+    stats = raid.RaidStats()
+    out_path = out_dir / OUTPUT_NAMES["raid-attacks"]
+    docs, written, segment_stats, elapsed, timeouts, forced = _run(
+        "raid-attacks",
+        _accounted(rows, raid.account, stats),
+        out_path,
+        stats,
+        workers=n_workers,
+        batch_size=batch_size,
+        progress=progress,
+    )
+    return _result(
+        "raid-attacks",
+        out_path,
+        rows=stats.rows,
+        docs=docs,
+        written=written,
+        elapsed=elapsed,
+        workers=n_workers,
+        batch_size=batch_size,
+        integrity_ok=True,
+        is_green=segment_stats.is_healthy,
         adapter_stats=stats.as_dict(),
         segment_stats=segment_stats,
         timeouts=timeouts,
