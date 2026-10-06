@@ -1,5 +1,6 @@
 """Fetch the raw corpus files using util func from base.py"""
 
+import shutil
 from pathlib import Path
 
 from aivhuman.config import RAW_DIR
@@ -22,11 +23,13 @@ MAGE_FILES: dict[str, str] = {
 # The CSVs start with a BOM, which plain utf-8 would leave glued to the first header name.
 MAGE_ENCODING = "utf-8-sig"
 
+DAIGT_DATASET = "thedrcat/daigt-v2-train-dataset"
+DAIGT_FILE = "train_v2_drcat_02.csv"
+
 RAID_REPO = "liamdugan/raid"
 RAID_FILE = "train.csv"
 
 SEQXGPT_REPO = "Jihuai-wpy/SeqXGPT"
-SEQXGPT_COMMIT = "main"
 
 _BENCH_DIR = "SeqXGPT/dataset/SeqXGPT-Bench"
 # Note the spaces in the directory name ----> they are real and must be URL-quoted.
@@ -50,7 +53,7 @@ def fetch_mage(revision: str | None = None) -> list[Path]:
     ]
 
 
-def fetch_seqxgpt(commit: str = SEQXGPT_COMMIT, *, include_ood: bool = True) -> list[Path]:
+def fetch_seqxgpt(*, include_ood: bool = True) -> list[Path]:
     """Download SeqXGPT-Bench, and by default the OOD sentence-level set too."""
     dest = RAW_DIR / "seqxgpt"
     paths = list(SEQXGPT_BENCH_FILES)
@@ -60,7 +63,6 @@ def fetch_seqxgpt(commit: str = SEQXGPT_COMMIT, *, include_ood: bool = True) -> 
     return [
         fetch_github_raw(
             repo=SEQXGPT_REPO,
-            commit=commit,
             path=path,
             dest_dir=dest / ("bench" if path.startswith(_BENCH_DIR) else "ood"),
         )
@@ -78,3 +80,15 @@ def fetch_raid(revision: str | None = None) -> list[Path]:
             revision=revision,
         )
     ]
+
+
+def fetch_daigt() -> list[Path]:
+    """Download DAIGT v2 from Kaggle. Public, so no credentials are needed."""
+    import kagglehub
+
+    dest = RAW_DIR / "daigt" / DAIGT_FILE
+    if not dest.exists():
+        cached = Path(kagglehub.dataset_download(DAIGT_DATASET)) / DAIGT_FILE
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(cached, dest)
+    return [dest]
