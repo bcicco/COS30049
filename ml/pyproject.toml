@@ -19,6 +19,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "requests>=2.32",
     "pydantic>=2.9",
+    # DAIGT acquisition.
+    "kagglehub>=0.3",
 ]
 
 [project.optional-dependencies]
@@ -84,10 +86,10 @@ python_version = "3.13"
 packages = ["aivhuman"]
 strict = true
 
-# pysbd, tokenizers, pyarrow, scipy, scikit-learn, wordfreq and pandas ship no type stubs.
+# pysbd, tokenizers, pyarrow, scipy, scikit-learn, wordfreq, pandas and kagglehub ship no type stubs.
 # Silencing them per-module keeps strict meaningful for our own code.
 [[tool.mypy.overrides]]
-module = ["pysbd.*", "tokenizers.*", "pyarrow.*", "scipy.*", "sklearn.*", "wordfreq.*", "pandas.*"]
+module = ["pysbd.*", "tokenizers.*", "pyarrow.*", "scipy.*", "sklearn.*", "wordfreq.*", "pandas.*", "kagglehub.*"]
 ignore_missing_imports = true
 
 # The train and serve extras are not installed in CI, so their packages resolve to Any there.
