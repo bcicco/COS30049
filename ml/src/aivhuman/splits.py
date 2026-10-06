@@ -152,6 +152,13 @@ def split_mage(rows: list[Row], foreign_keys: set[str], stats: SplitStats) -> di
     return out
 
 
+def split_daigt(rows: list[Row], foreign_keys: set[str], stats: SplitStats) -> dict[str, list[Row]]:
+    """Every essay, minus texts that also appear in another corpus."""
+    kept = [r for r in rows if r.key not in foreign_keys]
+    stats.dropped["daigt_shared_with_other_corpus"] = len(rows) - len(kept)
+    return {"daigt": kept}
+
+
 def split_seqxgpt(rows: list[Row], stats: SplitStats) -> dict[str, list[Row]]:
     """50/50 by base document."""
     units = merge_groups(rows)
@@ -182,13 +189,17 @@ def check_disjoint(splits: dict[str, list[Row]]) -> None:
 
 
 def assign(
-    raid: list[Row], mage: list[Row], seqxgpt: list[Row]
+    raid: list[Row], mage: list[Row], seqxgpt: list[Row], daigt: list[Row] | None = None
 ) -> tuple[dict[str, list[Row]], SplitStats]:
     """Assign every document to a split, or drop it."""
     stats = SplitStats()
+    daigt = daigt or []
     foreign = {r.key for r in raid} | {r.key for r in seqxgpt}
     splits = (
-        split_raid(raid, stats) | split_mage(mage, foreign, stats) | split_seqxgpt(seqxgpt, stats)
+        split_raid(raid, stats)
+        | split_mage(mage, foreign | {r.key for r in daigt}, stats)
+        | split_seqxgpt(seqxgpt, stats)
+        | split_daigt(daigt, foreign | {r.key for r in mage}, stats)
     )
     check_disjoint(splits)
 
@@ -218,10 +229,11 @@ def write_manifests(splits: dict[str, list[Row]], directory: Path) -> None:
 
 def build(processed_dir: Path, manifests_dir: Path, report_path: Path) -> SplitStats:
     """Read the JSONL, write every manifest and the split report."""
-    raid, mage, seqxgpt = (
-        list(read_rows(processed_dir / f"{source}.jsonl")) for source in ("raid", "mage", "seqxgpt")
+    raid, mage, seqxgpt, daigt = (
+        list(read_rows(processed_dir / f"{source}.jsonl"))
+        for source in ("raid", "mage", "seqxgpt", "daigt")
     )
-    splits, stats = assign(raid, mage, seqxgpt)
+    splits, stats = assign(raid, mage, seqxgpt, daigt)
     write_manifests(splits, manifests_dir)
 
     report: dict[str, Any] = {

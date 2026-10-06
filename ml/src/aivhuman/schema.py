@@ -19,7 +19,7 @@ LABEL_HUMAN: Final = 0
 LABEL_MACHINE: Final = 1
 LABEL_NAMES: Final = {LABEL_HUMAN: "human", LABEL_MACHINE: "machine"}
 
-SOURCES: Final = frozenset({"raid", "mage", "seqxgpt"})
+SOURCES: Final = frozenset({"raid", "mage", "seqxgpt", "daigt"})
 
 # note ood = out of domain
 SPLIT_ROLES: Final = frozenset(
@@ -30,6 +30,7 @@ SPLIT_ROLES: Final = frozenset(
         "xcorpus_para_test",  # MAGE test_ood_set_gpt_para
         "calib_pool",  # SeqXGPT-Bench
         "calib_ood_pool",  # SeqXGPT OOD sentence-level
+        "xcorpus_essay_test",  # DAIGT v2
     }
 )
 
