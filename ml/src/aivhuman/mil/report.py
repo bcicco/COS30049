@@ -9,7 +9,7 @@ from aivhuman.evaluate import SplitMetrics
 from aivhuman.mil.calibrate import ECE_TARGET, CellMetrics
 from aivhuman.mil.sentences import SentenceReport
 
-DOC_SPLITS: Final = ("raid-ood", "mage-x", "mage-para")
+DOC_SPLITS: Final = ("raid-ood", "mage-x", "mage-para", "daigt")
 
 
 def write(

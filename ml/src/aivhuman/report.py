@@ -258,6 +258,7 @@ POLARITY_RULES: Final = {
         'label == "human" or prompt covers the text',
         "per-record generator name",
     ),
+    "daigt": ('label == "0"', "same polarity as ours: 1 is AI"),
 }
 
 _SEGMENT_COUNTERS: Final = (
