@@ -15,6 +15,8 @@ wheels/
 **/data/
 **/reports
 **.json
+*.html
+*.drawio
 # Tool caches
 .pytest_cache/
 .ruff_cache/

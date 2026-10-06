@@ -1,5 +1,5 @@
 """MIL command line: extract, splice, vet, train, predict, evaluate, faithfulness, robustness,
-calibrate, report."""
+calibrate, cluster."""
 
 import argparse
 import random
@@ -81,6 +81,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--run", default=None)
     p.set_defaults(handler=_calibrate)
+
+    p = subparsers.add_parser("cluster")
+    p.add_argument("--split", default="dev")
+    p.add_argument("--k", type=int, default=None)
+    p.add_argument("--smoke", action="store_true")
+    p.add_argument("--run", default=None)
+    p.set_defaults(handler=_cluster)
 
     p = subparsers.add_parser("report")
     p.add_argument("--smoke", action="store_true")
@@ -440,6 +447,22 @@ def _report(args: argparse.Namespace) -> int:
         print(
             f"{p.name:>9}  P {c.precision:.3f}  R {c.recall:.3f}  FPR {c.fpr:.4f}  "
             f"IoU {p.iou_mean:.3f}"
+        )
+    print(f"wrote {path}")
+    return 0
+
+
+def _cluster(args: argparse.Namespace) -> int:
+    from aivhuman.mil import cluster, train
+
+    features, _, checkpoint, reports = _dirs(args.smoke, args.run)
+    model, std = train.load(checkpoint)
+    rep = cluster.cluster(features, config.PROCESSED_DIR, model, std, args.split, args.k)
+    path = cluster.write_report(rep, reports / "clusters")
+    for c in rep.clusters:
+        print(
+            f"cluster {c.index}: {c.size:>8,}  human {c.human_share:.1%}  "
+            f"{', '.join(c.top_features)}"
         )
     print(f"wrote {path}")
     return 0
