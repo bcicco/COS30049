@@ -55,15 +55,14 @@ def fetch_hf_file(
 def fetch_github_raw(
     *,
     repo: str,
-    commit: str,
     path: str,
     dest_dir: Path,
     timeout: int = 300,
 ) -> Path:
-    """Download one file from a GitHub repo at `commit`"""
+    """Download one file from a GitHub repo's main branch"""
     dest_dir.mkdir(parents=True, exist_ok=True)
     quoted = urllib.parse.quote(path)
-    url = f"https://raw.githubusercontent.com/{repo}/{commit}/{quoted}"
+    url = f"https://raw.githubusercontent.com/{repo}/main/{quoted}"
     local = dest_dir / Path(path).name
 
     if not local.exists():
