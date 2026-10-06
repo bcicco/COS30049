@@ -18,8 +18,9 @@ import orjson
 from pydantic import BaseModel, ConfigDict
 
 from aivhuman import config
+from aivhuman.acquire import DAIGT_FILE
 from aivhuman.schema import Doc, doc_to_json
-from aivhuman.sources import mage, raid, raid_attacks, seqxgpt
+from aivhuman.sources import daigt, mage, raid, raid_attacks, seqxgpt
 from aivhuman.sources.raid_parquet import CLEAN_FILE
 from aivhuman.text.segment import Segmenter, SegmentStats
 from aivhuman.text.tokens import TOKENIZER_REPO, tokenizer
@@ -55,6 +56,7 @@ OUTPUT_NAMES: Final = {
     "raid": "raid.jsonl",
     "mage": "mage.jsonl",
     "seqxgpt": "seqxgpt.jsonl",
+    "daigt": "daigt.jsonl",
     "raid-attacks": "raid-attacks.jsonl",
 }
 
@@ -119,6 +121,7 @@ _FALLBACK_SEG: Segmenter | None = None
 # Only pure row-to-document builders may run in a worker.
 _BUILDERS: Final[dict[str, Callable[[Any, Segmenter], Doc | None]]] = {
     "mage": mage.to_doc,
+    "daigt": daigt.to_doc,
     "raid": raid.to_doc,
     "raid-attacks": raid_attacks.to_doc,
 }
@@ -558,6 +561,51 @@ def ingest_mage(
     )
 
 
+def ingest_daigt(
+    path: Path,
+    out_dir: Path,
+    *,
+    workers: int | None = None,
+    batch_size: int = BATCH_SIZE,
+    progress: bool = False,
+) -> IngestResult:
+    """Segment the DAIGT v2 CSV, in file order."""
+    n_workers = config.workers() if workers is None else workers
+
+    pre = daigt.scan(path)
+    if not pre.integrity_ok:
+        raise IntegrityGateError(f"DAIGT integrity check failed: {pre.as_dict()}")
+
+    stats = daigt.DaigtStats()
+    rows = _accounted(daigt.iter_rows(path), daigt.account, stats)
+    out_path = out_dir / OUTPUT_NAMES["daigt"]
+    docs, written, segment_stats, elapsed, timeouts, forced = _run(
+        "daigt",
+        rows,
+        out_path,
+        stats,
+        workers=n_workers,
+        batch_size=batch_size,
+        progress=progress,
+    )
+    return _result(
+        "daigt",
+        out_path,
+        rows=stats.rows,
+        docs=docs,
+        written=written,
+        elapsed=elapsed,
+        workers=n_workers,
+        batch_size=batch_size,
+        integrity_ok=stats.integrity_ok,
+        is_green=stats.is_green,
+        adapter_stats=stats.as_dict(),
+        segment_stats=segment_stats,
+        timeouts=timeouts,
+        forced=forced,
+    )
+
+
 def ingest_seqxgpt(
     directory: Path,
     out_dir: Path,
@@ -604,7 +652,7 @@ def ingest_all(
     workers: int | None = None,
     progress: bool = True,
 ) -> list[IngestResult]:
-    """Segment all three corpora and write their JSONL and sidecars."""
+    """Segment every corpus and write their JSONL and sidecars."""
     raw = raw_dir if raw_dir is not None else config.RAW_DIR
     interim = interim_dir if interim_dir is not None else config.INTERIM_DIR
     out = out_dir if out_dir is not None else config.PROCESSED_DIR
@@ -624,6 +672,12 @@ def ingest_all(
         ),
         ingest_raid(
             interim / "raid" / CLEAN_FILE,
+            out,
+            workers=workers,
+            progress=progress,
+        ),
+        ingest_daigt(
+            raw / "daigt" / DAIGT_FILE,
             out,
             workers=workers,
             progress=progress,

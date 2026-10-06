@@ -14,6 +14,7 @@ from aivhuman import report as report_mod
 from aivhuman import splits as splits_mod
 from aivhuman import verify as verify_mod
 from aivhuman.ingest import (
+    ingest_daigt,
     ingest_mage,
     ingest_raid,
     ingest_raid_attacks,
@@ -47,7 +48,7 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers()
 
     p = subparsers.add_parser("acquire")
-    p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "all"], default="all")
+    p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "daigt", "all"], default="all")
     p.set_defaults(handler=_acquire)
 
     p = subparsers.add_parser("derive")
@@ -60,7 +61,7 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=_peek)
 
     p = subparsers.add_parser("ingest")
-    p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "all"], default="all")
+    p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "daigt", "all"], default="all")
     p.add_argument("--workers", type=int, default=None)
     p.set_defaults(handler=_ingest)
 
@@ -87,11 +88,12 @@ def _parser() -> argparse.ArgumentParser:
 
 def _acquire(args: argparse.Namespace) -> int:
     config.ensure_dirs()
-    wanted = ["raid", "mage", "seqxgpt"] if args.source == "all" else [args.source]
+    wanted = ["raid", "mage", "seqxgpt", "daigt"] if args.source == "all" else [args.source]
     fetchers: dict[str, Callable[[], list[Path]]] = {
         "raid": acquire.fetch_raid,
         "mage": acquire.fetch_mage,
         "seqxgpt": acquire.fetch_seqxgpt,
+        "daigt": acquire.fetch_daigt,
     }
     for name in wanted:
         print(f"{name}:", flush=True)
@@ -183,7 +185,7 @@ def _peek(args: argparse.Namespace) -> int:
 def _ingest(args: argparse.Namespace) -> int:
     config.ensure_dirs()
 
-    wanted = ["seqxgpt", "mage", "raid"] if args.source == "all" else [args.source]
+    wanted = ["seqxgpt", "mage", "raid", "daigt"] if args.source == "all" else [args.source]
     out = config.PROCESSED_DIR
     for name in wanted:
         if name == "seqxgpt":
@@ -195,6 +197,13 @@ def _ingest(args: argparse.Namespace) -> int:
         elif name == "mage":
             result = ingest_mage(
                 config.RAW_DIR / "mage",
+                out,
+                workers=args.workers,
+                progress=True,
+            )
+        elif name == "daigt":
+            result = ingest_daigt(
+                config.RAW_DIR / "daigt" / acquire.DAIGT_FILE,
                 out,
                 workers=args.workers,
                 progress=True,

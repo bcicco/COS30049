@@ -135,7 +135,7 @@ class Segmenter(BaseModel):
         """Return ordered, non-overlapping `(start, end)` pairs."""
         self.stats.docs += 1
         if not text.strip():
-            self.stats.empty_docs += 1
+            self.stats.empty_docs += 1  
             return []
 
         spans = self._enforce_monotonic(self._collect(text, 0, len(text)))
