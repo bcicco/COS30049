@@ -93,9 +93,7 @@ def _texts(processed: Path, keys: list[tuple[str, int]]) -> dict[tuple[str, int]
     for source in {d.split(":")[0] for d in wanted}:
         with (processed / f"{source}.jsonl").open(encoding="utf-8") as fh:
             for line in fh:
-                start = (
-                    line.index('"doc_id":"') + 10
-                )  # cheap prefix check before parsing the row
+                start = line.index('"doc_id":"') + 10  # cheap prefix check before parsing the row
                 doc_id = line[start : line.index('"', start)]
                 if doc_id not in wanted:
                     continue
@@ -115,9 +113,7 @@ def cluster(
     k: int | None,
 ) -> ClusterReport:
     cols = ["doc_id", "span_idx", "label", "domain", "breakdown", *std.names]
-    table = pq.read_table(
-        features / f"{split}.parquet", columns=list(dict.fromkeys(cols))
-    )
+    table = pq.read_table(features / f"{split}.parquet", columns=list(dict.fromkeys(cols)))
     machine = table.filter(pc.equal(table["label"], 1))
     human = table.filter(pc.equal(table["label"], 0))
     zm = std.transform(
@@ -178,9 +174,7 @@ def cluster(
                 mean_prob=round(float(probs[members].mean()), 3),
                 generators=_shares([generators[i] for i in np.flatnonzero(members)]),
                 domains=_shares([str(domains[i]) for i in np.flatnonzero(members)]),
-                deviations={
-                    std.names[j]: round(float(dev[j]), 2) for j in range(len(std.names))
-                },
+                deviations={std.names[j]: round(float(dev[j]), 2) for j in range(len(std.names))},
                 top_features=[std.names[j] for j in order[:TOP_FEATURES]],
                 examples=[texts[(doc_ids[i], span_idx[i])] for i in picks[c]],
             )
