@@ -29,6 +29,7 @@ KNOWN_SPLITS = frozenset(
         "mage-para",
         "seqxgpt-calib",
         "seqxgpt-test",
+        "daigt",
     }
 )
 

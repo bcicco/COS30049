@@ -17,7 +17,8 @@
     "mage-x": 432979,
     "mage-para": 2362,
     "seqxgpt-calib": 17909,
-    "seqxgpt-test": 17995
+    "seqxgpt-test": 17995,
+    "daigt": 44868
   },
   "groups": {
     "train": 8582,
@@ -26,7 +27,8 @@
     "mage-x": 432826,
     "mage-para": 2362,
     "seqxgpt-calib": 3092,
-    "seqxgpt-test": 3129
+    "seqxgpt-test": 3129,
+    "daigt": 44861
   },
   "human": {
     "train": 8582,
@@ -35,7 +37,8 @@
     "mage-x": 150355,
     "mage-para": 762,
     "seqxgpt-calib": 3169,
-    "seqxgpt-test": 3199
+    "seqxgpt-test": 3199,
+    "daigt": 27371
   },
   "machine": {
     "train": 257460,
@@ -44,7 +47,8 @@
     "mage-x": 282624,
     "mage-para": 1600,
     "seqxgpt-calib": 14740,
-    "seqxgpt-test": 14796
+    "seqxgpt-test": 14796,
+    "daigt": 17497
   },
   "domains": {
     "train": {
@@ -100,6 +104,23 @@
     },
     "seqxgpt-test": {
       "None": 17995
+    },
+    "daigt": {
+      "\"A Cowboy Who Rode the Waves\"": 1896,
+      "Car-free cities": 4717,
+      "Cell phones at school": 2119,
+      "Community service": 2092,
+      "Distance learning": 5554,
+      "Does the electoral college work?": 4434,
+      "Driverless cars": 2250,
+      "Exploring Venus": 2176,
+      "Facial action coding system": 3084,
+      "Grades for extracurricular activities": 2116,
+      "Mandatory extracurricular activities": 3077,
+      "Phones and driving": 1583,
+      "Seeking multiple opinions": 5176,
+      "Summer projects": 2701,
+      "The Face on Mars": 1893
     }
   },
   "generators": {
@@ -191,12 +212,32 @@
       "gptneo": 2981,
       "human": 3199,
       "llama": 2933
+    },
+    "daigt": {
+      "NousResearch/Llama-2-7b-chat-hf": 400,
+      "chat_gpt_moth": 2421,
+      "cohere-command": 350,
+      "darragh_claude_v6": 1000,
+      "darragh_claude_v7": 1000,
+      "falcon_180b_v1": 1055,
+      "human": 27371,
+      "kingki19_palm": 1384,
+      "llama2_chat": 2421,
+      "llama_70b_v1": 1172,
+      "mistral7binstruct_v1": 2421,
+      "mistral7binstruct_v2": 2421,
+      "mistralai/Mistral-7B-Instruct-v0.1": 400,
+      "palm-text-bison1": 349,
+      "radek_500": 500,
+      "radekgpt4": 200,
+      "train_essays": 3
     }
   },
   "dropped": {
     "raid_held_out_generator": 38120,
     "mage_shared_with_other_corpus": 503,
-    "mage_x_shared_with_para": 762
+    "mage_x_shared_with_para": 762,
+    "daigt_shared_with_other_corpus": 0
   },
   "merged_groups": {
     "raid": 281,

@@ -453,12 +453,19 @@ def _report(args: argparse.Namespace) -> int:
 
 
 def _cluster(args: argparse.Namespace) -> int:
+    import orjson
+
     from aivhuman.mil import cluster, train
 
     features, _, checkpoint, reports = _dirs(args.smoke, args.run)
     model, std = train.load(checkpoint)
     rep = cluster.cluster(features, config.PROCESSED_DIR, model, std, args.split, args.k)
-    path = cluster.write_report(rep, reports / "clusters")
+    out_dir = reports / "clusters"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "clusters.json"
+    path.write_bytes(
+        orjson.dumps(rep.model_dump(), option=orjson.OPT_INDENT_2 | orjson.OPT_NON_STR_KEYS)
+    )
     for c in rep.clusters:
         print(
             f"cluster {c.index}: {c.size:>8,}  human {c.human_share:.1%}  "
