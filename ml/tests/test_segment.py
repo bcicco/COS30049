@@ -1,10 +1,3 @@
-"""Sentence segmentation offsets.
-
-Every test here is ultimately about one invariant: `text[start:end]` is the
-sentence. A mis-anchored span is not a crash, it is a confident highlight drawn
-over the wrong words -- so the offsets are asserted rather than trusted.
-"""
-
 import time
 
 import pytest
@@ -58,21 +51,13 @@ def test_end_offsets_are_exclusive(segmenter: Segmenter) -> None:
 
 
 def test_pysbd_still_splits_on_bare_newlines(segmenter: Segmenter) -> None:
-    """Pins the behaviour an earlier design worked around.
-
-    The plan originally pre-split text on newlines and ran PySBD per block,
-    assuming PySBD ignores bare `\\n`. pysbd 0.3.4 does not ignore them, so the
-    block splitting was dropped as complexity with no effect. If a version bump
-    regresses this, RAID's poetry and recipe documents silently collapse into
-    single 400-token "sentences" -- fatal for a per-sentence product. Better to
-    fail here than to ship that.
-    """
+    # pysbd 0.3.4 splits on bare newlines so we dont pre-split. if this breaks after an upgrade,
+    # poetry/recipe docs turn into one giant sentence
     unpunctuated = "Roses are red\nViolets are blue\nSugar is sweet"
     assert len(segmenter.segment(unpunctuated)) == 3
 
 
 def test_repeated_sentences_anchor_to_successive_occurrences(segmenter: Segmenter) -> None:
-    """Identical sentences must map to distinct, advancing offsets."""
     text = "Yes. Yes. Yes."
     spans = segmenter.segment(text)
     starts = [s for s, _ in spans]
@@ -83,7 +68,6 @@ def test_repeated_sentences_anchor_to_successive_occurrences(segmenter: Segmente
 def test_moses_spaced_punctuation_splits_after_the_period(
     segmenter: Segmenter, seqxgpt_moses_text: str
 ) -> None:
-    """SeqXGPT's PubMed/arXiv style writes `disease .` with a space."""
     spans = segmenter.segment(seqxgpt_moses_text)
     _assert_spans_valid(seqxgpt_moses_text, spans)
     assert len(spans) >= 2
@@ -116,24 +100,12 @@ def test_n_words() -> None:
     assert n_words("   ") == 0
 
 
-# --------------------------------------------------------------------------- #
-# The pysbd hang
-# --------------------------------------------------------------------------- #
-
-# Bisected down from a real RAID abstract (id 70db035f) that hung a worker for
-# over eight minutes. Fifty characters is the whole reproducer. Do not "tidy"
-# the missing closing bracket: the unclosed list is the trigger.
+# from raid abstract 70db035f, hung a worker for 8+ min. keep the missing bracket
 CITATION_HANG = "des.[126 127 128 129 130 131 132 133 134 135 136 1"
 
 
 def test_a_citation_list_does_not_hang(segmenter: Segmenter) -> None:
-    """The regression test for an unbounded hang, not a slow path.
-
-    pysbd 0.3.4's replace_periods_before_numeric_references backtracks
-    exponentially on a terminator followed by a bracketed run of numbers. This
-    input never returns if it reaches pysbd, so a generous timing assertion is
-    the right one: the question is milliseconds versus forever.
-    """
+    # pysbd replace_periods_before_numeric_references backtracks forever on this
     start = time.perf_counter()
     spans = segmenter.segment(CITATION_HANG)
     elapsed = time.perf_counter() - start
@@ -145,7 +117,6 @@ def test_a_citation_list_does_not_hang(segmenter: Segmenter) -> None:
 
 
 def test_the_fallback_still_covers_every_character(segmenter: Segmenter) -> None:
-    """Coverage is a post-condition of the class, not of pysbd."""
     text = f"Known devices are listed. {CITATION_HANG} And prose resumes here."
 
     spans = segmenter.segment(text)
@@ -166,11 +137,6 @@ def test_the_fallback_still_covers_every_character(segmenter: Segmenter) -> None
     ids=["closed_3", "closed_short", "no_bracket", "no_terminator"],
 )
 def test_safe_number_runs_still_go_through_pysbd(text: str, segmenter: Segmenter) -> None:
-    """The guard has to stay narrow.
-
-    Each of these segments in milliseconds through pysbd, so diverting them to
-    the regex fallback would give up abbreviation handling for nothing.
-    """
     spans = segmenter.segment(text)
 
     _assert_spans_valid(text, spans)

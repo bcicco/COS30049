@@ -1,7 +1,6 @@
-"""tf-idf + logistic regression document baseline."""
+"""tfidf + LR baseline"""
 
-# Hashed features keep memory bounded BC/ a vocabulary over RAID's word bigrams would not fit
-# alongside the matrix in 16 GB.
+# hashing bc a real vocab over RAID bigrams + the matrix wont fit in 16GB
 
 from pathlib import Path
 from typing import Final
@@ -33,7 +32,7 @@ def run(
     predictions_dir: Path,
     c_grid: tuple[float, ...] = C_GRID,
 ) -> dict[float, float]:
-    """Fit on train, choose C by dev TPR at 1% FPR, write predictions. Returns the grid."""
+    """Fit on train, pick C on dev TPR@1%FPR, write preds. Returns the grid."""
     hasher = _vectorizer()
     tfidf = TfidfTransformer(sublinear_tf=True)
     train = splits["train"]

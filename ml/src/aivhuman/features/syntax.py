@@ -1,5 +1,3 @@
-"""Syntactic features from spaCy's pipeline."""
-
 from typing import Any, Final
 
 import numpy as np
@@ -17,7 +15,6 @@ def load() -> Any:
 
 
 def dep_depths(doc: Any) -> list[int]:
-    """Head-chain length from each token to its sentence root."""
     depth = [-1] * len(doc)
     for tok in doc:
         chain = []
@@ -34,7 +31,7 @@ def dep_depths(doc: Any) -> list[int]:
 
 
 def span_features(doc: Any, spans: list[tuple[int, int]]) -> np.ndarray:
-    """[n_spans, len(POS_TAGS) + 1]: POS proportions, then mean dependency depth."""
+    # cols: POS proportions then mean dep depth
     n_cols = len(POS_TAGS) + 1
     out = np.full((len(spans), n_cols), np.nan, dtype=np.float64)
     toks = [t for t in doc if not t.is_space]

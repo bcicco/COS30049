@@ -1,4 +1,4 @@
-"""Derive RAID's 11.8 GB CSV into parquet, once."""
+"""convert RAIDs 11.8 GB csv to parquet (one time)"""
 
 # big data nugget of wisdom here..... this is an 11gb csv
 # chose to read as parquet because parquet stores data by colum, we only want subsect of data where
@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
 
 from aivhuman.text.normalize import stable_hash
 
-# train.csv's columns, in order.
+# train.csv cols in order
 COLUMNS: Final = [
     "id",
     "adv_source_id",
@@ -45,23 +45,19 @@ CLEAN_ATTACK: Final = "none"
 CLEAN_FILE: Final = "clean.parquet"
 ATTACK_DIR: Final = "by_attack"
 
-# 64 MB CSV blocks: ~35k rows per batch, which keeps parquet row groups a
-# sensible size
+# 64MB blocks ~ 35k rows per batch, keeps row groups a sane size
 _BLOCK_SIZE: Final = 1 << 26  # 2^26 = 64Mb
 
 
-# ----------------- MEMORY MANAGEMENT EXPLANATION, CAN SKIP ------------------------------- #
-# Clean rows are ~7% of each block (from data. exploration), so they are buffered to this many rows
-# before a row group is written. Without it the output gets one 2.5k-row row
-# group per input block, and every later read pays for the fragmentation.
+# memory stuff, can skip
+# clean rows are ~7% of each block (from data. exploration) so buffer up to this many before
+# writing a row group. otherwise its one tiny 2.5k row group per block and reads get slow
 _FLUSH_ROWS: Final = 50_000
 
 _COMPRESSION: Final = "zstd"
 
 
 class RaidDeriveStats(BaseModel):
-    """What the pass saw"""
-
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     rows: NonNegativeInt = 0
@@ -78,7 +74,6 @@ class RaidDeriveStats(BaseModel):
 
     @property
     def clean_human_rows(self) -> int:
-        """Rows whose model column is human."""
         return self.clean_by_model.get("human", 0)
 
     @property
@@ -87,7 +82,7 @@ class RaidDeriveStats(BaseModel):
 
     @property
     def machine_per_human(self) -> float:
-        """For class balancing later down the track"""
+        # for class balancing later down the track
         return self.clean_machine_rows / self.clean_human_rows if self.clean_human_rows else 0.0
 
     def as_dict(self) -> dict[str, Any]:
@@ -116,8 +111,7 @@ def derive(
     stats: RaidDeriveStats | None = None,
     progress: bool = False,
 ) -> RaidDeriveStats:
-    """Scan csv_path once, writing the clean subset and the attack partitions."""
-
+    """One pass over the csv, writes clean subset + attack partitions."""
     # this function is gross, but its works so nobody question it #
     st = stats if stats is not None else RaidDeriveStats()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -188,7 +182,7 @@ def derive(
 
 
 def open_clean(path: Path) -> pq.ParquetFile:
-    """Open the derived clean parquet, checking it is the file we think it is."""
+    # check its actually the file we think it is
     handle = pq.ParquetFile(path)
     names = list(handle.schema_arrow.names)
     if names != OUTPUT_COLUMNS:
@@ -197,7 +191,6 @@ def open_clean(path: Path) -> pq.ParquetFile:
 
 
 def _read_batches(csv_path: Path, block_size: int) -> Iterator[pa.RecordBatch]:
-    """Stream the CSV in file order."""
     reader = pacsv.open_csv(
         csv_path,
         read_options=pacsv.ReadOptions(block_size=block_size),
@@ -211,7 +204,7 @@ def _read_batches(csv_path: Path, block_size: int) -> Iterator[pa.RecordBatch]:
 
 
 def _transform(batch: pa.RecordBatch) -> pa.RecordBatch:
-    """Drop prompt, adding its digest and length in its place."""
+    # prompt -> prompt_sha + prompt_len_chars
     prompt = batch.column(COLUMNS.index("prompt"))
     columns = [batch.column(i) for i, name in enumerate(COLUMNS) if name != "prompt"]
     return pa.RecordBatch.from_arrays(
@@ -221,19 +214,18 @@ def _transform(batch: pa.RecordBatch) -> pa.RecordBatch:
 
 
 def _prompt_sha(prompt: pa.Array) -> pa.Array:
-    """Hash the prompt column via its dictionary, not row by row."""
+    # hash the dictionary values only, way faster than per row
     encoded = pc.dictionary_encode(prompt)
     digests = pa.array([stable_hash(v or "") for v in encoded.dictionary.to_pylist()])
     return pa.DictionaryArray.from_arrays(encoded.indices, digests).cast(pa.string())
 
 
 def _attack_values(batch: pa.RecordBatch) -> list[str]:
-    """The distinct attacks in this batch. Rows are attack-sorted, so usually one."""
+    # rows are sorted by attack so usually just one
     return [v for v in pc.unique(batch.column("attack")).to_pylist() if v is not None]
 
 
 def _tally(counter: dict[str, int], batch: pa.RecordBatch, column: str) -> None:
-    """Accumulate value counts in Arrow rather than per row in Python."""
     for entry in pc.value_counts(batch.column(column)).to_pylist():
         key = entry["values"] if entry["values"] is not None else ""
         counter[key] = counter.get(key, 0) + entry["counts"]

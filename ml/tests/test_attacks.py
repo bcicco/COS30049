@@ -1,5 +1,3 @@
-"""Adversarial RAID splits: selection, and manifests that stay inside their clean split."""
-
 from pathlib import Path
 
 import orjson
@@ -17,7 +15,6 @@ ATTACKS_DIR = MANIFESTS_DIR / ATTACK_MANIFESTS
 
 
 def _features(path: Path, docs: list[tuple[str, int, int]]) -> None:
-    """A feature file with `n_spans` rows per (doc_id, label, n_spans)."""
     rows = [(d, i, y) for d, y, n in docs for i in range(n)]
     doc_ids, span_idx, labels = zip(*rows, strict=True)
     pq.write_table(

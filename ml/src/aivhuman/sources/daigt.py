@@ -1,4 +1,4 @@
-"""DAIGT v2: student essays against many LLMs, the essay-domain generalisation set."""
+"""DAIGT v2 student essays vs LLMs, essay domain test set"""
 
 import csv
 from collections.abc import Iterator
@@ -10,18 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
 from aivhuman.schema import LABEL_HUMAN, LABEL_MACHINE, Doc, SentenceSpan
 from aivhuman.text.normalize import nfc, stable_hash, text_key
 from aivhuman.text.segment import Segmenter, n_words
-from aivhuman.text.style import detect_style
 from aivhuman.text.tokens import count_tokens
 
 COLUMNS: Final = ["text", "label", "prompt_name", "source", "RDizzl3_seven"]
 SPLIT_ROLE: Final = "xcorpus_essay_test"
 
-# Same reason as mage.py: long rows, and `sys.maxsize` overflows on Windows.
+# same as mage.py, long rows + sys.maxsize overflows on windows
 _FIELD_SIZE_LIMIT: Final = 2**31 - 1
 
 
 class RawRow(BaseModel):
-    """One CSV row. `source` is the generator for AI rows and the human corpus otherwise."""
+    # source = generator for AI rows, human corpus name otherwise
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -34,8 +33,6 @@ class RawRow(BaseModel):
 
 
 class DaigtStats(BaseModel):
-    """Structural measurements to keep track of integrity"""
-
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     rows: NonNegativeInt = 0
@@ -46,7 +43,6 @@ class DaigtStats(BaseModel):
     bad_labels: NonNegativeInt = 0
     by_domain: dict[str, int] = Field(default_factory=dict)
     by_generator: dict[str, int] = Field(default_factory=dict)
-    styles: dict[str, int] = Field(default_factory=dict)
 
     @property
     def integrity_ok(self) -> bool:
@@ -58,13 +54,13 @@ class DaigtStats(BaseModel):
 
     def as_dict(self) -> dict[str, Any]:
         d = self.model_dump()
-        for key in ("by_domain", "by_generator", "styles"):
+        for key in ("by_domain", "by_generator"):
             d[key] = dict(sorted(d[key].items()))
         return d
 
 
 def label(row: RawRow) -> int:
-    """Same polarity as ours: 1 is AI."""
+    # same polarity as ours, 1 = AI
     return {"0": LABEL_HUMAN, "1": LABEL_MACHINE}[row.label]
 
 
@@ -73,7 +69,6 @@ def generator(row: RawRow) -> str | None:
 
 
 def iter_rows(path: Path) -> Iterator[RawRow]:
-    """Stream the CSV in file order."""
     csv.field_size_limit(_FIELD_SIZE_LIMIT)
     with path.open(encoding="utf-8", newline="") as fh:
         reader = csv.DictReader(fh)
@@ -91,7 +86,6 @@ def iter_rows(path: Path) -> Iterator[RawRow]:
 
 
 def scan(path: Path) -> DaigtStats:
-    """Populate counters that do not require segmenting the text."""
     st = DaigtStats()
     for row in iter_rows(path):
         account(row, st)
@@ -99,7 +93,6 @@ def scan(path: Path) -> DaigtStats:
 
 
 def account(row: RawRow, st: DaigtStats) -> None:
-    """Every counter that reads the row rather than the segmented text."""
     st.rows += 1
     if row.label not in ("0", "1"):
         st.bad_labels += 1
@@ -116,14 +109,13 @@ def account(row: RawRow, st: DaigtStats) -> None:
 
 
 def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
-    """Build one document. Pure, so it can run in a worker process."""
+    # pure so it can run in a worker
     text = nfc(row.text)
     if not text.strip():
         return None
 
     spans = seg.segment(text)
     _doc_tokens, per_span = count_tokens(text, spans)
-    style = detect_style(text)
 
     return Doc(
         doc_id=f"daigt:{row.row_index:07d}",
@@ -132,7 +124,7 @@ def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
         source="daigt",
         domain=row.prompt_name,
         generator=generator(row),
-        # No source document field, so each essay is its own group, as in MAGE.
+        # no source doc field so each essay is its own group (like mage)
         group_id=f"daigt:{stable_hash(text_key(text))}",
         split_role=SPLIT_ROLE,
         sentences=[
@@ -150,8 +142,5 @@ def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
             "raw_source": row.source,
             "rdizzl3_seven": row.rdizzl3_seven,
             "n_chars": len(text),
-            "detok_style": style.style,
-            "uppercase_ratio": style.uppercase_ratio,
-            "spaced_punct_ratio": style.spaced_punct_ratio,
         },
     )

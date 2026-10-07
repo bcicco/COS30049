@@ -1,4 +1,4 @@
-"""Data command line: acquire, derive, peek, ingest, verify, report, split, attacks."""
+"""data cli: acquire, derive, peek, ingest, verify, report, split, attacks"""
 
 import argparse
 import random
@@ -26,7 +26,7 @@ from aivhuman.schema import label_name
 from aivhuman.sources import mage, raid, seqxgpt
 from aivhuman.sources.raid_parquet import CLEAN_FILE, derive
 
-# Rows printed per source by `peek`, and the minimum of each awkward kind.
+# rows per source for peek
 PEEK_ROWS = 20
 PEEK_SEED = 20240501
 
@@ -83,9 +83,6 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-# ----------------------------Commands--------------------------------------- #
-
-
 def _acquire(args: argparse.Namespace) -> int:
     config.ensure_dirs()
     wanted = ["raid", "mage", "seqxgpt", "daigt"] if args.source == "all" else [args.source]
@@ -116,21 +113,17 @@ def _derive(args: argparse.Namespace) -> int:
 
 
 def _peek(args: argparse.Namespace) -> int:
-    """Print rows a person can check the polarity against."""
+    """print rows to eyeball the polarity against"""
 
-    # ----------------- NOTE -------------------------------------
-    #  Stratified on purpose. The quotas force the rows that actually distinguish a
-    # correct polarity from a flipped one: human rows, and MAGE's paraphrased
-    # human text, which upstream labels machine.
+    # NOTE stratified so we always get the rows that would show a flipped polarity:
+    # human rows + MAGE paraphrased human text (which upstream labels machine)
 
     rng = random.Random(PEEK_SEED)
 
     print("=" * 78)
-    print("RAID — label is derived from the `model` column; there is no label column")
+    print("RAID - label comes from the `model` column, there is no label column")
     print("=" * 78)
-    # Quotas, not a plain sample: human rows are 2.9% of clean RAID, so an
-    # unstratified sample of twenty can easily contain one or none -- and the
-    # human rows are the only ones that can disprove a flipped polarity.
+    # human rows are only 2.9% of clean RAID, a plain sample of 20 often has 0 or 1
     picked = _stratified(
         raid.load_rows(config.INTERIM_DIR / "raid" / CLEAN_FILE),
         {"human": (lambda r: r.model == "human", 5)},
@@ -144,7 +137,7 @@ def _peek(args: argparse.Namespace) -> int:
 
     print()
     print("=" * 78)
-    print('MAGE — polarity is INVERTED: label "1" is human, "0" is machine')
+    print('MAGE - polarity is INVERTED: label "1" is human, "0" is machine')
     print("=" * 78)
     # The paraphrase rows are only ~ 0.37%
     picked = _stratified(
@@ -164,7 +157,7 @@ def _peek(args: argparse.Namespace) -> int:
 
     print()
     print("=" * 78)
-    print("SeqXGPT — `prompt_len` chars are human, the rest is machine")
+    print("SeqXGPT - first `prompt_len` chars are human, rest is machine")
     print("=" * 78)
     records = _reservoir(
         iter(seqxgpt.load_records(config.RAW_DIR / "seqxgpt" / "bench")),
@@ -271,7 +264,6 @@ def _split(_args: argparse.Namespace) -> int:
 
 
 def _attacks(args: argparse.Namespace) -> int:
-    """Attacked variants of the extracted clean documents, plus their manifests."""
     from aivhuman.evaluate import load_manifest
     from aivhuman.sources import raid_attacks
 
@@ -307,9 +299,6 @@ def _attacks(args: argparse.Namespace) -> int:
     return 0
 
 
-# --------------------------------Helpers----------------------------------- #
-
-
 def _stratified(
     rows: Any,
     quotas: dict[str, tuple[Callable[[Any], bool], int]],
@@ -317,7 +306,7 @@ def _stratified(
     default_quota: int,
     rng: random.Random,
 ) -> dict[str, list[Any]]:
-    """One streaming pass, one reservoir per category, quotas guaranteed."""
+    # one pass, a reservoir per category
     reservoirs: dict[str, list[Any]] = {name: [] for name in quotas}
     reservoirs["_other"] = []
     seen: dict[str, int] = dict.fromkeys(reservoirs, 0)
@@ -344,7 +333,6 @@ def _stratified(
 
 
 def _reservoir(rows: Any, k: int, rng: random.Random) -> list[Any]:
-    """Reservoir-sample `k` rows in one streaming pass."""
     out: list[Any] = []
     for i, row in enumerate(rows):
         if i < k:
@@ -363,6 +351,5 @@ def _clip(text: str, limit: int) -> str:
 
 
 if __name__ == "__main__":
-    # --------------IMPORTANT -----------------------
-    # Required, not decoration: the ingest pool spawns children that re-import
+    # IMPORTANT dont remove, the ingest pool spawns children that re-import
     raise SystemExit(main())

@@ -1,4 +1,4 @@
-"""SeqXGPT: the only source with sentence-level provenance."""
+"""SeqXGPT, only source with sentence level labels"""
 
 import json
 from collections.abc import Iterator, Sequence
@@ -12,13 +12,12 @@ from aivhuman.labels import seqxgpt_doc_label
 from aivhuman.schema import LABEL_HUMAN, LABEL_MACHINE, Doc, SentenceSpan
 from aivhuman.text.normalize import CompositionStraddlesBoundary, nfc, nfc_split
 from aivhuman.text.segment import Segmenter, n_words
-from aivhuman.text.style import detect_style
 from aivhuman.text.tokens import count_tokens
 
 MACHINE_CHAR_THRESHOLD: Final = 0.5
 
-# Maps a file stem to the generator it holds, as a cross-check on the per-record
-# label field.  *** IS NOT a replacement for it. ***
+# file stem -> generator, only a cross check on the per record label field.
+# dont use it instead of the label
 FILE_GENERATOR: Final = {
     "en_gpt2_lines": "gpt2",
     "en_gpt3_lines": "gpt3re",
@@ -36,8 +35,6 @@ FILE_GENERATOR: Final = {
 
 
 class RawRecord(BaseModel):
-    """One line of a SeqXGPT JSONL, with its provenance attached."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     file_stem: str
@@ -48,8 +45,6 @@ class RawRecord(BaseModel):
 
 
 class SeqXGPTStats(BaseModel):
-    """Structural measurements published in the Phase 1 report."""
-
     model_config = ConfigDict(extra="forbid")
 
     records: NonNegativeInt = 0
@@ -60,7 +55,6 @@ class SeqXGPTStats(BaseModel):
     nfc_retracted: NonNegativeInt = 0
     nfc_shortened: NonNegativeInt = 0
     boundary_snap_dists: list[int] = Field(default_factory=list)
-    styles: dict[str, int] = Field(default_factory=dict)
 
     @property
     def straddle_rate(self) -> float:
@@ -87,12 +81,11 @@ class SeqXGPTStats(BaseModel):
             "boundary_snap_p50": pct(0.50),
             "boundary_snap_p90": pct(0.90),
             "boundary_snap_max": snaps[-1] if snaps else 0,
-            "styles": dict(sorted(self.styles.items())),
         }
 
 
 def load_records(directory: Path) -> list[RawRecord]:
-    """Read every JSONL in `directory` in sorted filename order."""
+    # sorted by filename
     out: list[RawRecord] = []
     for path in sorted(directory.glob("*.jsonl")):
         for i, line in enumerate(path.open(encoding="utf-8")):
@@ -115,9 +108,10 @@ def load_records(directory: Path) -> list[RawRecord]:
 def assign_sentence_labels(
     spans: Sequence[tuple[int, int]], boundary: int
 ) -> list[tuple[int, float, bool]]:
-    """Label each span by how much of it sits past the human/machine boundary.
+    """Label spans by how much is past the human/machine boundary.
 
-    Returns [(label, machine_char_frac, straddles), ...]."""
+    Returns [(label, machine_char_frac, straddles), ...]
+    """
 
     # ------------------------------- NOTE ------------------------------------
     # I don't love the way I did this. Done mmy best to explain my reasoning below,
@@ -125,12 +119,10 @@ def assign_sentence_labels(
 
     # -------------------------------- EXPLANATION -----------------------------
 
-    # The majority-character rule is a choice, and straddles exists so it does
-    # not have to be a silent. SeqXGPT's boundary is a *sentence* boundary by
-    # construction, so a straddling span means our segmenter disagrees with the one
-    # upstream used ----> a segmentation artifact, not genuinely mixed authorship.
-    # Phase 7 can therefore exclude straddlers from strict precision and recall and
-    # say how many it excluded, rather than folding disagreements into the score.
+    # majority of chars decides the label, straddles flag is there so its not silent.
+    # seqxgpt boundary is always a sentence boundary, so if a span straddles it our
+    # segmenter just disagrees with theirs ----> segmentation artifact, not real mixed text.
+    # so later we can drop straddlers from strict precision/recall and report how many
 
     out: list[tuple[int, float, bool]] = []
     for start, end in spans:
@@ -144,7 +136,6 @@ def assign_sentence_labels(
 
 
 def _boundary_snap_dist(spans: Sequence[tuple[int, int]], boundary: int) -> int:
-    """Distance from the boundary to the nearest sentence edge."""
     if not spans:
         return 0
     edges = [spans[0][0]] + [e for _s, e in spans]
@@ -158,7 +149,6 @@ def build_docs(
     segmenter: Segmenter | None = None,
     stats: SeqXGPTStats | None = None,
 ) -> Iterator[Doc]:
-    """Normalise a SeqXGPT directory into class Doc objects."""
     seg = segmenter or Segmenter()
     st = stats if stats is not None else SeqXGPTStats()
 
@@ -173,7 +163,7 @@ def build_docs(
             st.label_file_mismatches += 1
 
         if rec.prompt_len is None:
-            # en_human_lines: wholly human, no boundary to carry.
+            # en_human_lines, all human so no boundary
             text = nfc(rec.text)
             boundary = len(text)
             retract = delta = 0
@@ -181,8 +171,7 @@ def build_docs(
             try:
                 split = nfc_split(rec.text, rec.prompt_len)
             except (CompositionStraddlesBoundary, ValueError):
-                # Quarantined rather than guessed: a boundary we cannot carry
-                # through NFC would mislabel every sentence near the transition.
+                # quarantine, dont guess. a bad boundary mislabels every sentence near it
                 st.quarantined += 1
                 continue
             text, boundary = split.text, split.cut
@@ -196,8 +185,6 @@ def build_docs(
         spans = seg.segment(text)
         labels = assign_sentence_labels(spans, boundary)
         _doc_tokens, per_span = count_tokens(text, spans)
-        style = detect_style(text)
-        st.styles[style.style] = st.styles.get(style.style, 0) + 1
         st.total_spans += len(spans)
         st.straddle_spans += sum(1 for _l, _f, straddle in labels if straddle)
         if rec.prompt_len is not None:
@@ -236,8 +223,5 @@ def build_docs(
                 "nfc_retract": retract,
                 "nfc_delta": delta,
                 "n_chars": len(text),
-                "detok_style": style.style,
-                "uppercase_ratio": style.uppercase_ratio,
-                "spaced_punct_ratio": style.spaced_punct_ratio,
             },
         )

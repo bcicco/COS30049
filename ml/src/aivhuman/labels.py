@@ -12,10 +12,10 @@ class UnknownLabelError(ValueError):
     """An upstream label value we have never seen"""
 
 
-# --------------------------------RAID--------------------------------
+# RAID
 
-# The `model` column's full range. `"human"` is a value here, which is the
-# only reason RAID can be labelled at all (there is no label column).
+# all values of the model col. no label column in RAID, "human" showing up here
+# is the only way to label it
 RAID_MODELS: Final = frozenset(
     {
         "human",
@@ -33,25 +33,22 @@ RAID_MODELS: Final = frozenset(
     }
 )
 
-# Domains present in `train.csv`.
-# *** NOTE: *** `extra.csv` adds code/Czech/German, which are out of scope.
+# domains in train.csv
+# *** NOTE: *** extra.csv adds code/Czech/German, out of scope
 RAID_DOMAINS: Final = frozenset(
     {"abstracts", "books", "news", "poetry", "recipes", "reddit", "reviews", "wiki"}
 )
 
 
 def raid_label(model: str) -> int:
-    """Derive RAID's document label from its `model` column."""
-
     if model not in RAID_MODELS:
         raise UnknownLabelError(f"RAID model {model!r} not in the known set")
     return LABEL_HUMAN if model == "human" else LABEL_MACHINE
 
 
-# ------------------------------MAGE------------------------------------ #
+# MAGE
 
-# 14 domains, enumerated from the data
-# OOD testbeds and are absent from the documented list.
+# 14 domains, pulled from the data (OOD testbeds arent in the docs list)
 MAGE_DOMAINS: Final = frozenset(
     {
         "cmv",
@@ -71,7 +68,7 @@ MAGE_DOMAINS: Final = frozenset(
     }
 )
 
-# How the generated content was prompted.
+# how the generated text was prompted
 MAGE_STRATEGIES: Final = frozenset({"continuation", "specified", "topical"})
 
 MAGE_MODELS: Final = frozenset(
@@ -116,7 +113,7 @@ _MACHINE_SRC_RE = re.compile(
 
 
 def mage_label(raw: str) -> int:
-    """Collapse MAGE's `label` column to canonical polarity"""
+    # MAGE has 1 = human, flip to ours
     try:
         return _MAGE_LABELS[raw.strip()]
     except KeyError:
@@ -124,8 +121,6 @@ def mage_label(raw: str) -> int:
 
 
 class ParsedSrc(NamedTuple):
-    """Decomposition of a MAGE `src` string."""
-
     domain: str | None
     generator: str | None
     strategy: str | None
@@ -134,18 +129,11 @@ class ParsedSrc(NamedTuple):
 
 
 def parse_src(src: str) -> ParsedSrc:
-    """Decompose a MAGE `src` into domain, generator, strategy and paraphrase.
-
-    MAGE has **three** `src` grammars, not the one its documentation implies:
-
-    `{domain}_human`
-        `cmv_human` -- human-written.
-    `{domain}_machine_{strategy}_{model}`
-        `eli5_machine_continuation_flan_t5_xl` -- the bulk of the corpus.
-    `{domain}_{model}`
-        `cnn_gpt4` -- the GPT-4 OOD testbeds only.
-
-    Any of them may carry a trailing `_para`."""
+    # MAGE src actually has 3 formats (docs only mention one):
+    #   {domain}_human                       e.g. cmv_human
+    #   {domain}_machine_{strategy}_{model}  e.g. eli5_machine_continuation_flan_t5_xl, most rows
+    #   {domain}_{model}                     e.g. cnn_gpt4, only the gpt4 OOD sets
+    # any of them can end in _para
     core = src
     is_para = False
     if core.endswith("_para"):
@@ -173,17 +161,13 @@ def parse_src(src: str) -> ParsedSrc:
     return ParsedSrc(None, None, None, is_para, False)
 
 
-# -----------------------------------SeqXGPT---------------------------------------- #
-#
-
+# SeqXGPT
 
 # gpt3re is the upstream spelling for the GPT-3 re-generation variant, weird i know.
 SEQXGPT_GENERATORS: Final = frozenset({"gpt2", "gptneo", "gptj", "llama", "gpt3re", "human"})
 
 
 def seqxgpt_doc_label(raw: str, boundary: int, length: int) -> int:
-    """Document label for a SeqXGPT record."""
-
     # boundary is where the human prompt ends.
     if raw not in SEQXGPT_GENERATORS:
         raise UnknownLabelError(f"SeqXGPT label {raw!r} not in the known set")

@@ -1,4 +1,4 @@
-"""RAID: the only corpus this project trains on."""
+"""RAID, the only corpus we train on"""
 
 from collections.abc import Iterator
 from pathlib import Path
@@ -12,7 +12,6 @@ from aivhuman.schema import LABEL_HUMAN, Doc, SentenceSpan
 from aivhuman.sources.raid_parquet import CLEAN_ATTACK, open_clean
 from aivhuman.text.normalize import nfc
 from aivhuman.text.segment import Segmenter, n_words
-from aivhuman.text.style import detect_style
 from aivhuman.text.tokens import count_tokens
 
 # Every clean RAID row lands in one pool (all train)
@@ -25,15 +24,12 @@ MAX_EXAMPLES: Final = 20
 
 
 class RawRow(BaseModel):
-    """One row of the derived clean parquet."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
     source_id: str
     adv_source_id: str
-    model: str
-    """RAID's generator column. `"human"` here *is* the label."""
+    model: str  # generator col, "human" here is the label
 
     decoding: str
     repetition_penalty: str
@@ -46,8 +42,6 @@ class RawRow(BaseModel):
 
 
 class RaidStats(BaseModel):
-    """Structural and integrity measurements"""
-
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     rows: NonNegativeInt = 0
@@ -60,10 +54,9 @@ class RaidStats(BaseModel):
     by_model: dict[str, int] = Field(default_factory=dict)
     by_domain: dict[str, int] = Field(default_factory=dict)
     by_decoding: dict[str, int] = Field(default_factory=dict)
-    styles: dict[str, int] = Field(default_factory=dict)
 
+    # 1st domain seen per source_id, to catch groups spanning domains
     group_domain: dict[str, str] = Field(default_factory=dict)
-    """First domain seen per `source_id`, to detect groups spanning domains."""
 
     multi_domain_groups: list[str] = Field(default_factory=list)
     groups_with_human: set[str] = Field(default_factory=set)
@@ -74,10 +67,9 @@ class RaidStats(BaseModel):
 
     @property
     def groups_without_human(self) -> int:
-        """Groups holding machine rows but no human original."""
-        # -------------------- IMPORTANT, SLIGHTLY CONFUSING ----------------
-        # Not a corruption!! -- it means raid ood on that domain has no negatives,
-        # so a per-domain TPR-at-fixed-FPR number cannot be computed there.
+        """Groups with machine rows but no human original."""
+        # slightly confusing, this isnt corruption!! just means raid ood on that domain has
+        # no negatives so per domain TPR at fixed FPR cant be computed there
 
         return self.n_groups - len(self.groups_with_human)
 
@@ -87,7 +79,6 @@ class RaidStats(BaseModel):
 
     @property
     def integrity_ok(self) -> bool:
-        """Everything checkable without touching the text."""
         return (
             not self.unknown_domains
             and set(self.attacks_seen) <= {CLEAN_ATTACK}
@@ -98,7 +89,7 @@ class RaidStats(BaseModel):
 
     @property
     def is_green(self) -> bool:
-        """Whether a full func build_docs pass may be used."""
+        # ok to use a full build_docs pass
         return self.integrity_ok and self.docs + self.empty_text == self.rows
 
     def as_dict(self) -> dict[str, Any]:
@@ -117,12 +108,10 @@ class RaidStats(BaseModel):
             "by_model": dict(sorted(self.by_model.items())),
             "by_domain": dict(sorted(self.by_domain.items())),
             "by_decoding": dict(sorted(self.by_decoding.items())),
-            "styles": dict(sorted(self.styles.items())),
         }
 
 
 def load_rows(path: Path, *, batch_size: int = BATCH_SIZE) -> Iterator[RawRow]:
-    """Stream the derived clean parquet in file order."""
     handle = open_clean(path)
     for batch in handle.iter_batches(batch_size=batch_size):
         for row in batch.to_pylist():
@@ -136,7 +125,6 @@ def build_docs(
     segmenter: Segmenter | None = None,
     stats: RaidStats | None = None,
 ) -> Iterator[Doc]:
-    """Normalise the clean RAID parquet into class Doc objects, in file order."""
     seg = segmenter or Segmenter()
     st = stats if stats is not None else RaidStats()
 
@@ -144,33 +132,19 @@ def build_docs(
         account(row, st)
         doc = to_doc(row, seg)
         if doc is not None:
-            count_doc(doc, st)
+            st.docs += 1
             yield doc
 
 
 def scan(path: Path, *, batch_size: int = BATCH_SIZE, stats: RaidStats | None = None) -> RaidStats:
-    """Populate every counter that does not require the text"""
-
     st = stats if stats is not None else RaidStats()
     for row in load_rows(path, batch_size=batch_size):
         account(row, st)
     return st
 
 
-def count_doc(doc: Doc, st: RaidStats) -> None:
-    """Record the counters only a built document can supply."""
-
-    # --------------------NOTE-----------------------------------------
-    # Separated from _account because _to_doc` runs in a worker
-    # process where a  stats object is a copy that gets thrown away.
-
-    st.docs += 1
-    style = str(doc.meta["detok_style"])
-    st.styles[style] = st.styles.get(style, 0) + 1
-
-
 def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
-    """Build one document. Pure, so it can run in a worker process."""
+    # pure so it can run in a worker
     label = raid_label(row.model)
 
     text = nfc(row.generation)
@@ -179,7 +153,6 @@ def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
 
     spans = seg.segment(text)
     _doc_tokens, per_span = count_tokens(text, spans)
-    style = detect_style(text)
 
     return Doc(
         doc_id=f"raid:{row.id}",
@@ -210,15 +183,12 @@ def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
             "prompt_sha": row.prompt_sha,
             "prompt_len_chars": row.prompt_len_chars,
             "n_chars": len(text),
-            "detok_style": style.style,
-            "uppercase_ratio": style.uppercase_ratio,
-            "spaced_punct_ratio": style.spaced_punct_ratio,
         },
     )
 
 
 def account(row: RawRow, st: RaidStats) -> int:
-    """Every counter that reads metadata rather than text. Returns the label."""
+    # metadata counters only, returns the label
     st.rows += 1
     label = raid_label(row.model)
 
@@ -238,8 +208,7 @@ def account(row: RawRow, st: RaidStats) -> int:
 
     seen_domain = st.group_domain.setdefault(row.source_id, row.domain)
     if seen_domain != row.domain and len(st.multi_domain_groups) < MAX_EXAMPLES:
-        # A source_id spanning two domains would mean the grouping key is not
-        # the document identity we think it is
+        # source_id in 2 domains -> grouping key isnt the doc identity we think it is
         st.multi_domain_groups.append(row.source_id)
 
     if not row.generation.strip():

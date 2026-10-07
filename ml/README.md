@@ -1,145 +1,156 @@
 # aivhuman
 
-Detects AI-written text **sentence by sentence**, not just "this whole document is AI".
+Sentence level AI text detection using multiple instance learning (MIL). Run everything
+from inside `ml/`.
 
-Right now the project is at **Phase 1**: downloading three public datasets of human and
-AI text (RAID, MAGE, SeqXGPT), cleaning them, and saving them in one shared format. The
-model itself comes in later phases. See [`PLAN.md`](PLAN.md) for the full roadmap.
-
----
-
-## 1. What you need first
-
- **uv**  installs Python 3.13 and every dependency for you. You don't need to install Python yourself 
- **~20 GB free disk** RAID's raw CSV  is 11.8 GB. Only needed if you download the data (step 4) 
-
-### Install uv
-
-**macOS / Linux:**
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-**Windows (PowerShell):**
-
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-Close and reopen your terminal afterwards, then check that it worked:
-
-```bash
-uv --version
-```
-
----
-
-## 2. Set up the project
-
-```bash
-git clone <repo-url>
-cd aivhuman/ml              # everything below is run from inside ml/
-uv sync --extra dev         # creates .venv/ and installs everything from uv.lock
-```
-
-That's it. There is no need to activate the virtual environment: `uv run <command>`
-always uses the project's environment.
-
-Then copy the example settings file:
-
-```bash
-cp .env.example .env        # Windows cmd: copy .env.example .env
-```
-
-The defaults are fine. `HF_TOKEN` can stay empty, since all three datasets are public. If
-Hugging Face starts rate-limiting you, create a free token at
-<https://huggingface.co/settings/tokens> and paste it in.
-
----
-
-## 3. Check everything works
-
-```bash
-uv run pytest
-```
-
-You should see a wall of dots and no `F`s. These tests use small built-in samples, so
-they run in seconds and don't download anything. If this passes, your setup is good.
-
----
-
-## 4. Build the dataset (optional, slow)
-
-Only do this if you actually need the processed data. Run the steps **in order**:
-
-```bash
-uv run aivhuman-data acquire      # 1. download raw corpora         (~12 GB, depends on your internet)
-uv run aivhuman-data derive       # 2. convert RAID's CSV to parquet (~2 min)
-uv run aivhuman-data peek         # 3. print sample rows so you can eyeball the labels
-uv run aivhuman-data ingest       # 4. split into sentences, write JSONL (~20-40 min on 8+ cores)
-uv run aivhuman-data verify       # 5. re-check every document on disk
-uv run aivhuman-data report       # 6. write summary CSVs to reports/phase1/
-```
-
-Useful options:
-
-- `--source raid|mage|seqxgpt` on `acquire` and `ingest` does one corpus at a time.
-  SeqXGPT is the smallest, so start with it if you just want to see things working.
-- `--help` on any command lists its options, e.g. `uv run aivhuman-data ingest --help`.
-
-### Where things end up
+## Layout
 
 ```
-ml/data/raw/                 downloaded files, untouched
-ml/data/interim/raid/        RAID converted to parquet
-ml/data/processed/phase1/    final output: {raid,mage,seqxgpt}.jsonl + .stats.json
-ml/reports/phase1/           summary report (this one IS committed to git)
+ml/
+  environment.yml          conda env
+  pyproject.toml           package + the three cli tools
+  src/aivhuman/            code (see Source below)
+  tests/                   pytest
+  manifests/               split membership (doc_id -> group_id)
+  data/processed/phase1/   processed corpora, one doc per line (JSONL)
+  data/features/           prepared dataset, one row per sentence (Parquet)
+  data/checkpoints/p5-adv/ final model (model.pt) + calibrator (calibrator.json)
+  reports/                 results used in the report (JSON, PNG)
 ```
 
-`data/` is gitignored, so never try to commit it.
+## Data
 
----
+`data/processed/phase1/` has the normalised, sentence segmented docs for each corpus
+(`raid`, `raid-attacks`, `mage`, `seqxgpt`, `daigt`). One JSON object per line, schema is in
+`src/aivhuman/schema.py` (text, label, source, domain, generator, group, sentence offsets).
+Only docs that are in a split in `manifests/` are kept.
 
-## 5. Before you push code
+`data/features/` is one Parquet file per split. A row is one sentence: doc id, position,
+doc label (0 = human, 1 = machine), domain, generator, sentence label (SeqXGPT only) and
+the 21 features. Its Parquet bc there are millions of rows, `pandas.read_parquet(path)`
+opens them fine.
 
-CI runs these four checks on Windows and Linux. Run them locally first:
-
-```bash
-uv run ruff format .     # auto-format
-uv run ruff check .      # lint (add --fix to auto-fix)
-uv run mypy              # type check (strict)
-uv run pytest            # tests
-```
-
----
-
-## 6. Adding a dependency
-
-```bash
-uv add <package>                 # runtime dependency
-uv add --optional dev <package>  # dev-only tool
-```
-
-This updates both `pyproject.toml` and `uv.lock`, so commit both. Don't `pip install`
-into the environment by hand, because the next `uv sync` will remove it.
-
-The `train` extra (torch and friends ~2.5 GB) is only for later. Install it
-with `uv sync --extra dev --extra train` when you need it.
-
----
-
-## Common problems
-
-| Symptom | Fix |
+| File | Role |
 | --- | --- |
-| `uv: command not found` | Reopen your terminal after installing uv |
-| Weird characters / `UnicodeEncodeError` when printing text on Windows | Make sure `.env` has `PYTHONUTF8=1` (it does if you copied `.env.example`) |
-| `ingest` is slow or your machine becomes unresponsive | Lower the worker count: `--workers 4`, or set `AIVHUMAN_WORKERS` in `.env` |
-| Running out of disk | Point the data somewhere else: set `AIVHUMAN_DATA_ROOT=D:/aivhuman-data` in `.env` |
-| `peek` or `ingest` says a file is missing | You skipped a step. `acquire` must run before `derive`, and `derive` before RAID `ingest` |
+| `train`, `train-spliced`, `train-adv`, `train-adv-spliced` | Training data of the final model (RAID; spliced human/machine documents; attacked RAID documents) |
+| `dev` | Model selection (document partial AUROC) |
+| `seqxgpt-calib` | Model selection (sentence AUROC on a 20% slice) and calibration fit |
+| `seqxgpt-test` | Sentence-level evaluation |
+| `dev-spliced` | Calibration check on RAID spliced documents |
+| `raid-ood`, `mage-x`, `mage-para`, `daigt` | Document-level evaluation; never trained on |
+| `dev-adv`, `raid-ood-adv` | Evaluation on attacked RAID documents |
 
----
+Corpora: RAID (Dugan et al. 2024), MAGE (Li et al. 2024), SeqXGPT (Wang et al. 2023) and
+DAIGT v2 (Kłeczek 2023). Full refs are in the report.
 
-## Where to read next
-- `src/aivhuman/schema.py`: the `Doc` / `SentenceSpan` format every output line follows
+## Setup
+
+```bash
+conda env create -f environment.yml
+conda activate aivhuman
+cp .env.example .env        # Windows cmd: copy .env.example .env
+python -m pytest            # should all pass
+```
+
+This gets you Python 3.13, PyTorch (CUDA 12.8 build), the spaCy English model and the
+package in editable mode, so `aivhuman-data`, `aivhuman-baseline` and `aivhuman-mil` end up
+on the path. Works on CPU too if you dont have an NVIDIA GPU. `.env` defaults are fine,
+`HF_TOKEN` can be left empty.
+
+## Vetting features
+
+Checks for corpus artefacts, length confounding and transfer (Table 4 in the report):
+
+```bash
+aivhuman-mil vet            # writes reports/phase4/feature_vetting.json
+```
+
+Standardisation (z-scores fit on clean train, missing -> mean) and dropping the excluded
+features both happen in `train`, nothing else to run first.
+
+### Rebuilding from raw (optional, slow)
+
+Only if you want to regenerate `data/` from scratch. ~12 GB download, and feature
+extraction wants a GPU (I used an A100).
+
+```bash
+aivhuman-data acquire       # download RAID, MAGE, SeqXGPT and DAIGT into data/raw
+aivhuman-data derive        # stream RAID's CSV into Parquet (clean rows + one partition per attack)
+aivhuman-data ingest        # normalise (NFC), segment into sentences, write data/processed/phase1/*.jsonl
+aivhuman-data verify        # re-check every document's offsets and labels
+aivhuman-data report        # dataset summary in reports/phase1
+aivhuman-data split         # write the split manifests in manifests/
+aivhuman-mil extract --split train dev raid-ood mage-x mage-para seqxgpt-calib seqxgpt-test daigt
+aivhuman-data attacks       # attacked RAID documents and their manifests
+aivhuman-mil extract --split train-adv dev-adv raid-ood-adv
+aivhuman-mil splice         # spliced human/machine documents from train and dev
+aivhuman-mil splice --adv   # the same from the attacked documents
+```
+
+## Training
+
+Final model is `p5-adv`: GAM head, length normalised log-sum-exp pooling (temp = 2,
+L1 = 1e-4), trained on clean + spliced + attacked RAID docs. About a minute on CPU.
+
+```bash
+aivhuman-mil train --kept --mix spliced-adv --run p5-adv
+aivhuman-mil calibrate --run p5-adv
+```
+
+`train` writes `data/checkpoints/p5-adv/model.pt` and the selection results to
+`reports/phase5/p5-adv/`. `calibrate` fits the per length calibrator (`calibrator.json`)
+and writes `reports/phase6/calibration.json`. Drop `--kept` to run the full pooling / L1
+sweep instead, it keeps the best config.
+
+Baselines train on the text in `data/processed`:
+
+```bash
+aivhuman-baseline tfidf     # tf-idf + logistic regression
+aivhuman-baseline encoder   # fine-tuned ModernBERT (GPU)
+```
+
+## Scoring
+
+First run pulls GPT-2 (~500 MB) into `data/hf`. Scoring is on CPU.
+
+```bash
+aivhuman-mil score "Paste a paragraph of text here."
+aivhuman-mil score --file essay.txt
+aivhuman-mil score --file essay.txt --json     # full result: offsets, scores, contributions
+```
+
+Per sentence you get the calibrated probability, `FLAG` if its over the 1% sentence FPR
+threshold, `short` if under 15 tokens (capped, never flagged), and the top 3 feature
+contributions (positive = more machine). Then the doc probability and the error rates
+measured at those thresholds.
+
+Whole prepared splits:
+
+```bash
+aivhuman-mil predict --run p5-adv     # writes data/predictions/p5-adv/{split}.parquet
+```
+
+`report` compares against the baselines on every test split, so run `predict` and both
+baseline commands before it:
+
+```bash
+aivhuman-mil report --run p5-adv      # writes reports/phase7/evaluation.json
+aivhuman-mil cluster --run p5-adv     # k-means clusters of machine sentences on dev
+```
+
+## Tests
+
+```bash
+python -m pytest            # unit tests, no data needed
+ruff check . && mypy        # lint + strict types (CI runs these too)
+```
+
+## Source
+
+| Path | Contents |
+| --- | --- |
+| `cli.py`, `acquire.py`, `sources/`, `text/`, `ingest.py`, `verify.py`, `splits.py`, `group.py`, `labels.py`, `schema.py`, `report.py` | `aivhuman-data`: download, normalise, segment, validate and split the corpora |
+| `baselines/` | `aivhuman-baseline`: tf-idf + LR and ModernBERT |
+| `features/` | Feature extraction, vetting and splicing |
+| `mil/` | `aivhuman-mil`: MIL model, training, prediction, calibration, clustering, evaluation report, text scoring |
+| `evaluate.py` | Shared metrics (TPR at fixed FPR, partial AUROC, bootstrap intervals) |

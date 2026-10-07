@@ -1,5 +1,3 @@
-"""Training, scoring and the pooling / L1 sweep."""
-
 import copy
 import random
 import time
@@ -19,33 +17,24 @@ from aivhuman.mil.model import MILConfig, MILModel
 
 
 class Scores(BaseModel):
-    """Model outputs for every bag and span of a split."""
-
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     doc_logits: np.ndarray
     coverage: np.ndarray
-    sentence_logits: np.ndarray
-    """Flat, aligned with the split's span rows."""
+    sentence_logits: np.ndarray  # flat, same order as span rows
 
 
 class RunResult(BaseModel):
-    """One sweep configuration and its best dev result."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     config: MILConfig
-    selection: float
-    """Mean of dev doc partial AUROC and sentence-validation AUROC; the criterion."""
+    selection: float  # (dev pauc + sent auroc) / 2
     dev_pauc: float
-    sentence_auroc: float
-    """Sentence AUROC on the seqxgpt-calib validation slice."""
-    dev_tpr: float
-    """Dev TPR at 1% FPR at the selected epoch."""
+    sentence_auroc: float  # on the seqxgpt-calib val slice
+    dev_tpr: float  # @1% fpr
     best_epoch: int
     seconds: float
     history: list[float] = []
-    """Selection criterion after each epoch."""
 
 
 @torch.no_grad()
@@ -64,7 +53,7 @@ def score(model: MILModel, bags: Bags, batch_size: int = 256) -> Scores:
 
 
 def _sentence_loss(bags: Bags, idx: list[int], logits: torch.Tensor) -> torch.Tensor:
-    """BCE over the batch's spans with a known sentence label; zero if there are none."""
+    # only spans w/ known labels, 0 if none in the batch
     target = torch.full(logits.shape, -1.0)
     for row, i in enumerate(idx):
         lo, hi = bags.offsets[i], bags.offsets[i + 1]
@@ -76,28 +65,20 @@ def _sentence_loss(bags: Bags, idx: list[int], logits: torch.Tensor) -> torch.Te
 
 
 def sentence_auroc(model: MILModel, bags: Bags) -> float:
-    """AUROC of raw sentence logits against known sentence labels."""
     keep, y = bags.sentence_labels()
     return float(roc_auc_score(y, score(model, bags).sentence_logits[keep]))
 
 
 def fit(cfg: MILConfig, train: Bags, dev: Bags, sentence_val: Bags) -> tuple[MILModel, RunResult]:
-    """Train on standardised bags, keeping the epoch with the best selection criterion.
-
-    The criterion averages dev document partial AUROC and sentence AUROC on a labelled slice,
-    because document scores alone reward models whose sentence scores drift towards chance.
-    Partial AUROC rather than TPR at 1% FPR: dev has ~950 human documents, so the 1% threshold
-    rests on ~9 of them and is too noisy to select on.
-    """
+    """train, keep the best epoch by (doc pauc + sentence auroc) / 2"""
+    # doc score alone let the sentence scores drift to chance.
+    # pauc bc tpr@1% on ~950 human dev docs is like 9 docs, way too noisy
     start = time.time()
     torch.manual_seed(cfg.seed)
     rng = random.Random(cfg.seed)
     model = MILModel(train.x.shape[1], cfg)
     model.set_knots(torch.from_numpy(train.x))
-    groups: list[dict[str, Any]] = [{"params": list(model.head.parameters())}]
-    if cfg.crf:
-        groups.append({"params": [model.stickiness], "lr": cfg.crf_lr})
-    optimiser = torch.optim.AdamW(groups, lr=cfg.lr, weight_decay=0.0)
+    optimiser = torch.optim.AdamW(model.head.parameters(), lr=cfg.lr, weight_decay=0.0)
     labels = torch.from_numpy(train.labels)
     n_machine = float(train.labels.sum())
     pos_weight = torch.tensor((len(train) - n_machine) / n_machine)
@@ -111,11 +92,10 @@ def fit(cfg: MILConfig, train: Bags, dev: Bags, sentence_val: Bags) -> tuple[MIL
         rng.shuffle(order)
         for idx, x, mask in batches(train, order, cfg.batch_size):
             y = labels[idx]
-            d, c, s = model(x, mask)
+            d, _, s = model(x, mask)
             loss = doc_loss(d, y)
             if cfg.sentence_weight:
                 loss = loss + cfg.sentence_weight * _sentence_loss(train, idx, s)
-            loss = loss + cfg.coverage_weight * F.binary_cross_entropy(c.clamp(1e-6, 1 - 1e-6), y)
             loss = loss + cfg.l1 * model.l1_penalty()
             optimiser.zero_grad(set_to_none=True)
             loss.backward()
@@ -149,21 +129,11 @@ def fit(cfg: MILConfig, train: Bags, dev: Bags, sentence_val: Bags) -> tuple[MIL
     )
 
 
-KEPT: Final = MILConfig(head="gam", pooling="lse", tau=2.0, l1=1e-4)
-"""The shape carried forward from the pooling and L1 sweep."""
+KEPT: Final = MILConfig(head="gam", pooling="lse", tau=2.0, l1=1e-4)  # winner of the sweep
 
 
-def sweep_configs(sentence_weights: tuple[float, ...] = (), crf: bool = False) -> list[MILConfig]:
-    """GAM pooling and L1 variants plus a linear reference; with sentence weights, the three
-    best-performing shapes at each weight; with `crf`, CRF variants of the kept GAM shape next
-    to the same shape without one."""
-    if crf:
-        return [
-            KEPT,
-            KEPT.model_copy(update={"crf": True, "crf_lr": 1e-2}),
-            KEPT.model_copy(update={"crf": True, "crf_lr": 1e-1}),
-            KEPT.model_copy(update={"crf": True, "crf_lr": 1e-2, "tau": 5.0}),
-        ]
+def sweep_configs(sentence_weights: tuple[float, ...] = ()) -> list[MILConfig]:
+    # with sentence weights only rerun the 3 best shapes
     if sentence_weights:
         shapes: list[dict[str, Any]] = [
             {"head": "linear", "pooling": "lse", "tau": 5.0, "l1": 1e-3},
@@ -199,6 +169,8 @@ def save(path: Path, model: MILModel, std: Standardizer, result: RunResult) -> N
 def load(path: Path) -> tuple[MILModel, Standardizer]:
     payload = torch.load(path, map_location="cpu", weights_only=False)
     std = Standardizer.model_validate(payload["standardizer"])
-    model = MILModel(len(std.names), MILConfig.model_validate(payload["config"]))
+    # old ckpts still have crf / coverage loss keys
+    cfg = {k: v for k, v in payload["config"].items() if k in MILConfig.model_fields}
+    model = MILModel(len(std.names), MILConfig.model_validate(cfg))
     model.load_state_dict(payload["state"])
     return model, std

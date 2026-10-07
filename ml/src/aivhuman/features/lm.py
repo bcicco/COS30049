@@ -1,4 +1,4 @@
-"""Reference-LM features: GPT-2 small, one pass per document with full left context."""
+"""GPT-2 small reference LM features"""
 
 from typing import Any, Final
 
@@ -10,21 +10,17 @@ from aivhuman.text.tokens import assign_to_spans
 
 REFERENCE_LM: Final = "gpt2"
 MAX_CONTEXT: Final = 1024
-CARRIED: Final = 512
-"""Tokens of left context carried into each window after the first."""
+CARRIED: Final = 512  # left context carried into each window after the 1st
 TOP_K: Final = 10
 
-# Columns of the per-token score matrix
+# cols of the per token score matrix
 LOGPROB, LOGRANK, TOP10, ENTROPY = range(4)
 
 
 def windows(
     n_tokens: int, max_context: int = MAX_CONTEXT, carried: int = CARRIED
 ) -> list[tuple[int, int, int]]:
-    """`(start, end, score_from)` windows over the sequence `[BOS] + tokens`.
-
-    A window function keeps tabs which tokens have been covered
-    """
+    """(start, end, score_from) windows over [BOS] + tokens"""
     if not 0 < carried < max_context:
         raise ValueError(f"carried={carried} must lie in (0, max_context={max_context})")
     n = n_tokens + 1
@@ -42,7 +38,6 @@ def windows(
 def span_features(
     offsets: list[tuple[int, int]], scores: np.ndarray, spans: list[tuple[int, int]]
 ) -> np.ndarray:
-    """Per-span LM and document-context features, `[n_spans, 6]`. NaN for spans with no token."""
     owner = np.array(assign_to_spans(offsets, spans), dtype=np.int64)
     out = np.full((len(spans), 6), np.nan, dtype=np.float64)
     inside = owner >= 0
@@ -60,11 +55,8 @@ def span_features(
 
 
 class ReferenceLM:
-    """Scores every token of a document batch under a causal LM.
-
-    `token_budget` bounds tokens per forward pass; peak memory is about 1 MB per token for the
-    float32 vocabulary distributions, so 2048 suits a 6 GB card and 16384 an 80 GB one.
-    """
+    # token_budget = tokens per forward pass. ~1MB/token for the fp32 vocab dists,
+    # 2048 ok on my 6GB card, 16384 for an 80GB one
 
     def __init__(
         self,
@@ -93,7 +85,7 @@ class ReferenceLM:
 
     @torch.no_grad()
     def token_scores(self, ids: list[list[int]]) -> list[np.ndarray]:
-        """`[n_tokens, 4]` per document: log-prob, log-rank, in-top-10, entropy."""
+        # per doc [n_tokens, 4]: logprob, logrank, in top10, entropy
         seqs = [[self.bos, *doc] for doc in ids]
         out = [np.empty((len(doc), 4), dtype=np.float32) for doc in ids]
         jobs = [
@@ -103,7 +95,7 @@ class ReferenceLM:
             if f < e
         ]
         jobs.sort(key=lambda j: j[2] - j[1])
-        # Ascending length, so the job being added is always the widest in its batch.
+        # sorted by length so the newest job is always the widest one in the batch
         batch: list[tuple[int, int, int, int]] = []
         for job in jobs:
             if batch and (len(batch) + 1) * (job[2] - job[1]) > self.token_budget:
@@ -145,5 +137,5 @@ class ReferenceLM:
             .numpy()
         )
         for row, (d, s, e, f) in enumerate(batch):
-            # Logits at window position j predict sequence position s + j + 1 = token s + j.
+            # logits at pos j predict seq pos s+j+1, which is token s+j
             out[d][f - 1 : e - 1] = stats[row, f - s - 1 : e - s - 1]

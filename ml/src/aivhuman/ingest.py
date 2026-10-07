@@ -1,4 +1,4 @@
-"""Segment the three corpora into JSONL, in parallel where appropriate"""
+"""segment the corpora into jsonl, parallel where it makes sense"""
 
 # ------------------------------NOTE-----------------------------------------
 # I got really carried away with optimising this. I'm doing some d.e training atm and wanted
@@ -18,38 +18,32 @@ import orjson
 from pydantic import BaseModel, ConfigDict
 
 from aivhuman import config
-from aivhuman.acquire import DAIGT_FILE
 from aivhuman.schema import Doc, doc_to_json
 from aivhuman.sources import daigt, mage, raid, raid_attacks, seqxgpt
-from aivhuman.sources.raid_parquet import CLEAN_FILE
 from aivhuman.text.segment import Segmenter, SegmentStats
 from aivhuman.text.tokens import TOKENIZER_REPO, tokenizer
 
 # NEEDED TO ADD THIS TO PREVENT PICKLING OVERHEAD >:( s
 BATCH_SIZE: Final = 256
 
-# -------------------NOTE-------------------------------------------
-# Some notes (i learnt this the hard way, this was painful)
-
-# Tasks submitted per worker per window. `Pool.map` is used rather than
-# imap BECAUSE imap drains its input iterable ASAP. which
-# pulls all 468k rows into memory as pending tasks :))))
-# A window bounds that to workers x TASKS_PER_WORKER x BATCH_SIZE
-# documents, and costs one task's worth of idle workers at each window boundary.
+# NOTE (i learnt this the hard way, this was painful)
+# tasks per worker per window. not using imap BECAUSE imap drains its input ASAP
+# which pulls all 468k rows into memory as pending tasks :))))
+# window caps it at workers x TASKS_PER_WORKER x BATCH_SIZE docs, costs a bit of
+# idle time at each window boundary
 TASKS_PER_WORKER: Final = 4
 
 PROGRESS_EVERY: Final = 20_000
 
 
-# Wall clock allowed for one batch before its worker is presumed hung.
-# From benchmarking, a 256-document batch takes a few seconds....
-
+# wall clock per batch before we assume the worker hung.
+# from benchmarking a 256 doc batch takes a few seconds....
 
 # NOTE this is not a performance knob, it actually makes the diff. betw. corpus that finishes
 # or not, so it is set with two orders of magnitude of headroom
 TASK_TIMEOUT_S: Final = 120.0
 
-# Wall clock allowed for a single document while isolating a hung batch.
+# per doc, when isolating a hung batch
 ISOLATION_TIMEOUT_S: Final = 15.0
 
 OUTPUT_NAMES: Final = {
@@ -60,28 +54,24 @@ OUTPUT_NAMES: Final = {
     "raid-attacks": "raid-attacks.jsonl",
 }
 
-# Written while a pass runs, renamed on success to prevent confusion between success / trunc. runs
+# written during a pass, renamed on success so trunc. runs dont look finished
 PARTIAL_SUFFIX: Final = ".partial"
 
 
 class IngestGateError(RuntimeError):
-    """A precondition for writing output failed. Nothing was written."""
+    """precondition failed, nothing written"""
 
 
 class IntegrityGateError(IngestGateError):
-    """A corpus failed its metadata checks, before any text was segmented."""
+    pass
 
 
 class _TextCounters(Protocol):
-    """The two adapter counters only a built document can supply."""
-
     docs: int
-    styles: dict[str, int]
 
 
 class IngestResult(BaseModel):
-    """One corpus's pass, as recorded in its sidecar next to the JSONL."""
-
+    # what goes in the sidecar next to the jsonl
     model_config = ConfigDict(extra="forbid")
 
     source: str
@@ -97,12 +87,8 @@ class IngestResult(BaseModel):
     is_green: bool
     segment_healthy: bool
     timed_out_batches: int = 0
+    # docs that had to skip pysbd. keep the ids so i can look them up (2 in RAID)
     forced_fallback_docs: list[str] = []
-    """Documents that had to skip pysbd because it would not finish on them.
-
-    Named rather than counted: there were two in RAID, both worth being able to
-    look up, and a growing list is a signal about the corpus rather than noise.
-    """
 
     adapter_stats: dict[str, Any]
     segment_stats: dict[str, Any]
@@ -111,14 +97,13 @@ class IngestResult(BaseModel):
         return self.model_dump(mode="json")
 
 
-# -----------------------------Worker side------------------------------------- #
-#
+# worker side
 
 
 _SEG: Segmenter | None = None
 _FALLBACK_SEG: Segmenter | None = None
 
-# Only pure row-to-document builders may run in a worker.
+# only pure row -> doc builders can go in a worker
 _BUILDERS: Final[dict[str, Callable[[Any, Segmenter], Doc | None]]] = {
     "mage": mage.to_doc,
     "daigt": daigt.to_doc,
@@ -135,11 +120,10 @@ class _Batch(NamedTuple):
 class _Result(NamedTuple):
     lines: list[bytes]
     segment_stats: SegmentStats
-    styles: dict[str, int]
 
 
 def _segmenter() -> Segmenter:
-    """The per-process segmenter. Expensive to build, not thread-safe."""
+    # one per process, slow to build + not thread safe
     global _SEG
     if _SEG is None:
         _SEG = Segmenter()
@@ -147,7 +131,6 @@ def _segmenter() -> Segmenter:
 
 
 def _fallback_segmenter() -> Segmenter:
-    """A segmenter that never calls pysbd, for documents pysbd cannot finish."""
     global _FALLBACK_SEG
     if _FALLBACK_SEG is None:
         _FALLBACK_SEG = Segmenter(use_pysbd=False)
@@ -155,31 +138,26 @@ def _fallback_segmenter() -> Segmenter:
 
 
 def _init_worker() -> None:
-    """Pay for the segmenter and the tokenizer once per worker, not once per task."""
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     _segmenter()
     tokenizer()
 
 
 def _task(batch: _Batch, use_pysbd: bool = True) -> _Result:
-    """Segment one batch. Runs in a worker; returns lines and summable counters."""
     seg = _segmenter() if use_pysbd else _fallback_segmenter()
     seg.stats = SegmentStats()
     build = _BUILDERS[batch.source]
 
     lines: list[bytes] = []
-    styles: dict[str, int] = {}
     for row in batch.rows:
         doc = build(row, seg)
         if doc is None:
             continue
         lines.append(doc_to_json(doc) + b"\n")
-        style = str(doc.meta["detok_style"])
-        styles[style] = styles.get(style, 0) + 1
-    return _Result(lines, seg.stats, styles)
+    return _Result(lines, seg.stats)
 
 
-# -----------------------Parent side------------------------------- #
+# parent side
 
 
 class _Progress:
@@ -209,7 +187,6 @@ def _atomic_writer(path: Path) -> Iterator[BinaryIO]:
 def _accounted(
     rows: Iterable[Any], account: Callable[[Any, Any], Any], stats: Any
 ) -> Iterator[Any]:
-    """Run the parent-side accounting as rows stream past on their way to a batch."""
     for row in rows:
         account(row, stats)
         yield row
@@ -244,15 +221,12 @@ def _merge_segment_stats(total: SegmentStats, delta: SegmentStats) -> None:
 
 def _apply(counters: _TextCounters, result: _Result) -> None:
     counters.docs += len(result.lines)
-    for style, count in result.styles.items():
-        counters.styles[style] = counters.styles.get(style, 0) + count
 
 
 class _PoolRunner:
-    """A spawn pool that survives a task which never returns."""
+    """spawn pool that survives a task that never returns"""
 
-    # ----------------NOTE-------------------------------------#
-    # From testing, pysbd hung forever on bad doc. and regex held GIL,
+    # NOTE from testing, pysbd hung forever on bad doc. and regex held GIL,
     # nothing inside worker can interrupt
     # only way is wall clock & terminate ().....
 
@@ -267,11 +241,9 @@ class _PoolRunner:
         self._pool: Any = None
 
     def run(self, tasks: list[_Batch]) -> list[_Result]:
-        """Segment every task, isolating any that overruns."""
         return self._drain(tasks, self.task_timeout, self._on_batch_timeout)
 
     def _on_batch_timeout(self, batch: _Batch) -> list[_Result]:
-        """Count the expensive event, then go find which document caused it."""
         self.timeouts += 1
         return self._isolate(batch)
 
@@ -292,7 +264,6 @@ class _PoolRunner:
         timeout: float,
         on_timeout: Callable[[_Batch], list[_Result]],
     ) -> list[_Result]:
-        """Collect tasks in order, rebuilding the pool around any that hang."""
         out: list[_Result] = []
         pending = tasks
         while pending:
@@ -304,7 +275,7 @@ class _PoolRunner:
                 except multiprocessing.TimeoutError:
                     self.close()
                     out.extend(on_timeout(pending[index]))
-                    # Everything after the culprit died with the pool.
+                    # everything after the bad one died w/ the pool
                     pending = pending[index + 1 :]
                     break
             else:
@@ -312,19 +283,18 @@ class _PoolRunner:
         return out
 
     def _isolate(self, batch: _Batch) -> list[_Result]:
-        """Re-run one batch document by document, to find what actually hung."""
+        # rerun doc by doc to find the one that hung
         singles = [_Batch(batch.source, [row]) for row in batch.rows]
         return self._drain(singles, ISOLATION_TIMEOUT_S, self._force_fallback)
 
     def _force_fallback(self, batch: _Batch) -> list[_Result]:
-        """Segment without pysbd, in this process. Cannot hang, cannot be beaten."""
+        # no pysbd, in process, cant hang
         for row in batch.rows:
             self.forced_fallback_docs.append(_row_label(row))
         return [_task(batch, use_pysbd=False)]
 
 
 def _row_label(row: Any) -> str:
-    """Best available identifier for a row, for the record of what fell back."""
     for attr in ("id", "doc_id"):
         value = getattr(row, attr, None)
         if value is not None:
@@ -343,11 +313,7 @@ def _run(
     progress: bool,
     task_timeout: float = TASK_TIMEOUT_S,
 ) -> tuple[int, int, SegmentStats, float, int, list[str]]:
-    """Segment rows into out_path.
-
-    Returns docs, bytes, stats, seconds, timed-out batches and the ids of any
-    documents that had to skip pysbd.
-    """
+    """returns docs, bytes, stats, secs, timed out batches, forced fallback ids"""
     batches = _batches(rows, source, batch_size)
     segment_stats = SegmentStats()
     prog = _Progress(source, progress)
@@ -366,8 +332,8 @@ def _run(
 
     with _atomic_writer(out_path) as fh:
         if workers <= 1:
-            # In-process, so a debugger works and tests can monkeypatch the
-            # tokenizer -- a patch in the parent cannot reach a spawned child.
+            # in process so the debugger works + tests can monkeypatch the
+            # tokenizer (patches dont reach spawned children)
             _init_worker()
             for batch in batches:
                 consume(fh, _task(batch))
@@ -423,7 +389,6 @@ def _result(
     )
 
 
-# -----------------------The three corpora------------------------------------------ #
 # CORPORA SPECIFIC PROCESSING
 
 
@@ -436,7 +401,6 @@ def ingest_raid(
     progress: bool = False,
     check_integrity: bool = True,
 ) -> IngestResult:
-    """Segment the derived clean RAID parquet."""
     n_workers = config.workers() if workers is None else workers
 
     if check_integrity:
@@ -482,7 +446,7 @@ def ingest_raid_attacks(
     batch_size: int = BATCH_SIZE,
     progress: bool = False,
 ) -> IngestResult:
-    """Segment attacked RAID rows. No integrity gate: attacks are the point here."""
+    # no integrity gate here, the attacks are the whole point
     n_workers = config.workers() if workers is None else workers
     stats = raid.RaidStats()
     out_path = out_dir / OUTPUT_NAMES["raid-attacks"]
@@ -523,7 +487,6 @@ def ingest_mage(
     progress: bool = False,
     check_integrity: bool = True,
 ) -> IngestResult:
-    """Segment MAGE's five CSVs, in file order."""
     n_workers = config.workers() if workers is None else workers
 
     if check_integrity:
@@ -569,7 +532,6 @@ def ingest_daigt(
     batch_size: int = BATCH_SIZE,
     progress: bool = False,
 ) -> IngestResult:
-    """Segment the DAIGT v2 CSV, in file order."""
     n_workers = config.workers() if workers is None else workers
 
     pre = daigt.scan(path)
@@ -613,7 +575,7 @@ def ingest_seqxgpt(
     split_role: str = "calib_pool",
     progress: bool = False,
 ) -> IngestResult:
-    """Segment SeqXGPT, sequentially and deliberately so."""
+    # sequential, no pool
     stats = seqxgpt.SeqXGPTStats()
     segmenter = Segmenter()
     out_path = out_dir / OUTPUT_NAMES["seqxgpt"]
@@ -644,52 +606,8 @@ def ingest_seqxgpt(
     )
 
 
-def ingest_all(
-    *,
-    raw_dir: Path | None = None,
-    interim_dir: Path | None = None,
-    out_dir: Path | None = None,
-    workers: int | None = None,
-    progress: bool = True,
-) -> list[IngestResult]:
-    """Segment every corpus and write their JSONL and sidecars."""
-    raw = raw_dir if raw_dir is not None else config.RAW_DIR
-    interim = interim_dir if interim_dir is not None else config.INTERIM_DIR
-    out = out_dir if out_dir is not None else config.PROCESSED_DIR
-    out.mkdir(parents=True, exist_ok=True)
-
-    results = [
-        ingest_seqxgpt(
-            raw / "seqxgpt" / "bench",
-            out,
-            progress=progress,
-        ),
-        ingest_mage(
-            raw / "mage",
-            out,
-            workers=workers,
-            progress=progress,
-        ),
-        ingest_raid(
-            interim / "raid" / CLEAN_FILE,
-            out,
-            workers=workers,
-            progress=progress,
-        ),
-        ingest_daigt(
-            raw / "daigt" / DAIGT_FILE,
-            out,
-            workers=workers,
-            progress=progress,
-        ),
-    ]
-    for result in results:
-        write_sidecar(result, out)
-    return results
-
-
 def write_sidecar(result: IngestResult, out_dir: Path) -> Path:
-    """Write `{source}.stats.json` beside the JSONL, for report to format."""
+    # {source}.stats.json, report.py reads these
     path = out_dir / f"{result.source}.stats.json"
     path.write_bytes(orjson.dumps(result.as_dict(), option=orjson.OPT_INDENT_2))
     return path

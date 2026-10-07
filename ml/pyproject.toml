@@ -44,16 +44,11 @@ train = [
     # Reliability diagrams.
     "matplotlib>=3.9",
 ]
-serve = [
-    "fastapi>=0.115",
-    "uvicorn>=0.30",
-]
 
 [project.scripts]
 aivhuman-data = "aivhuman.cli:main"
 aivhuman-baseline = "aivhuman.baselines.cli:main"
 aivhuman-mil = "aivhuman.mil.cli:main"
-aivhuman-serve = "aivhuman.serve:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -92,14 +87,14 @@ strict = true
 module = ["pysbd.*", "tokenizers.*", "pyarrow.*", "scipy.*", "sklearn.*", "wordfreq.*", "pandas.*", "kagglehub.*"]
 ignore_missing_imports = true
 
-# The train and serve extras are not installed in CI, so their packages resolve to Any there.
+# The train extra is not installed in CI, so its packages resolve to Any there.
 # Their modules must type-check both with and without it.
 [[tool.mypy.overrides]]
-module = ["torch.*", "transformers.*", "spacy.*", "matplotlib.*", "fastapi.*", "uvicorn.*"]
+module = ["torch.*", "transformers.*", "spacy.*", "matplotlib.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["aivhuman.baselines.*", "aivhuman.features.*", "aivhuman.mil.*", "aivhuman.serve"]
+module = ["aivhuman.baselines.*", "aivhuman.features.*", "aivhuman.mil.*"]
 disallow_subclassing_any = false
 disallow_untyped_decorators = false
 

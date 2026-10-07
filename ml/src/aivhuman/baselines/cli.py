@@ -1,4 +1,4 @@
-"""Baseline command line: tfidf, encoder, evaluate."""
+"""Baseline CLI: tfidf, encoder, evaluate."""
 
 import argparse
 import time
@@ -75,8 +75,7 @@ def _encoder(args: argparse.Namespace) -> int:
     else:
         splits = _load(["train", *ev.EVAL_SPLITS])
         history = model.fit(splits["train"], splits["dev"], checkpoint)
-        # IMPORTANT ** BUG FIX **
-        # Predictions from an earlier checkpoint would otherwise be kept as already scored.
+        # old preds from a previous ckpt would get skipped as already scored otherwise
         for stale in (config.PREDICTIONS_DIR / encoder.MODEL_NAME).glob("*.parquet"):
             stale.unlink()
         print(f"dev TPR@1%FPR per epoch: {history}", flush=True)

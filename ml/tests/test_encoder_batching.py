@@ -1,5 +1,3 @@
-"""Group sampling and length batching for the encoder baseline."""
-
 import random
 
 import pytest

@@ -1,5 +1,4 @@
-"""MIL command line: extract, splice, vet, train, predict, evaluate, faithfulness, robustness,
-calibrate, cluster."""
+"""mil cli (extract, splice, vet, train, predict, evaluate, calibrate, cluster, report, score)"""
 
 import argparse
 import random
@@ -52,9 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         nargs="+",
         default=[],
     )
-    p.add_argument("--crf", action="store_true")
     p.add_argument("--kept", action="store_true")
-    p.add_argument("--crf-lr", type=float, default=1e-2)
     p.add_argument("--run", default=None)
     p.set_defaults(handler=_train)
 
@@ -67,15 +64,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--models", nargs="+", default=list(EVAL_MODELS))
     p.add_argument("--report-dir", type=Path, default=config.MIL_REPORT_DIR)
     p.set_defaults(handler=_evaluate)
-
-    p = subparsers.add_parser("faithfulness")
-    p.add_argument("--smoke", action="store_true")
-    p.add_argument("--run", default=None)
-    p.set_defaults(handler=_faithfulness)
-
-    p = subparsers.add_parser("robustness")
-    p.add_argument("--runs", nargs="+", default=["mil"])
-    p.set_defaults(handler=_robustness)
 
     p = subparsers.add_parser("calibrate")
     p.add_argument("--smoke", action="store_true")
@@ -94,6 +82,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--run", default=None)
     p.add_argument("--baselines", nargs="+", default=list(REPORT_BASELINES))
     p.set_defaults(handler=_report)
+
+    p = subparsers.add_parser("score", help="score new text sentence by sentence")
+    source = p.add_mutually_exclusive_group(required=True)
+    source.add_argument("text", nargs="?")
+    source.add_argument("--file", type=Path)
+    p.add_argument("--run", default="p5-adv")
+    p.add_argument("--json", action="store_true", help="print the full result as JSON")
+    p.set_defaults(handler=_score)
 
     args = parser.parse_args(argv)
     handler = getattr(args, "handler", None)
@@ -176,11 +172,7 @@ def _vet(args: argparse.Namespace) -> int:
 
 
 def _dirs(smoke: bool, run: str | None = None) -> tuple[Path, Path, Path, Path]:
-    """Features, predictions root, checkpoint and report locations.
-
-    A named run gets its own checkpoint and a report folder under the robustness reports;
-    otherwise the checkpoint is `mil/model.pt` and reports go to the MIL report directory.
-    """
+    # features, preds, checkpoint, reports. named runs get their own ckpt + robustness dir
     sub = "smoke" if smoke else ""
     reports = config.ROBUSTNESS_REPORT_DIR / sub / run if run else config.MIL_REPORT_DIR / sub
     return (
@@ -192,8 +184,7 @@ def _dirs(smoke: bool, run: str | None = None) -> tuple[Path, Path, Path, Path]:
 
 
 def _training_bags(features: Path, mix: str) -> tuple[Any, Any, Any, Any]:
-    """Standardised train, dev and sentence-validation bags for a training mix, and the
-    standardizer, which is always fitted on clean train."""
+    # std is always fit on clean train, whatever the mix
     from aivhuman.features import EXCLUDED, FEATURE_NAMES
     from aivhuman.mil.data import Standardizer, load_bags
 
@@ -229,18 +220,13 @@ def _train(args: argparse.Namespace) -> int:
 
     best = None
     results = []
-    if args.kept:
-        configs = [train.KEPT.model_copy(update={"crf": args.crf, "crf_lr": args.crf_lr})]
-    else:
-        configs = train.sweep_configs(tuple(args.sentence_weight), crf=args.crf)
+    configs = [train.KEPT] if args.kept else train.sweep_configs(tuple(args.sentence_weight))
     for cfg in configs:
         model, result = train.fit(cfg, train_bags, dev_bags, sent_bags)
         results.append(result)
         shape = f"tau={cfg.tau:g}" if cfg.pooling == "lse" else f"k={cfg.k}"
         if cfg.sentence_weight:
             shape += f" sw={cfg.sentence_weight:g}"
-        if cfg.crf:
-            shape += f" crf lr={cfg.crf_lr:g}"
         print(
             f"  {cfg.head} {cfg.pooling} {shape} l1={cfg.l1:g}: select {result.selection:.4f}"
             f" (doc pAUC {result.dev_pauc:.4f}, sent AUROC {result.sentence_auroc:.4f},"
@@ -263,7 +249,6 @@ def _train(args: argparse.Namespace) -> int:
 
 
 def _sweep_report(results: list[Any], path: Path, raid_sent: float | None) -> None:
-    """Every sweep result, best selection first, and the selected model's RAID sentence AUROC."""
     import orjson
 
     report = {
@@ -275,7 +260,6 @@ def _sweep_report(results: list[Any], path: Path, raid_sent: float | None) -> No
 
 
 def _calibration_slice(features: Path, std: Any, validation: bool) -> Any:
-    """seqxgpt-calib bags: the sentence-validation slice, or the calibration remainder."""
     from aivhuman.evaluate import load_manifest
     from aivhuman.mil.data import in_sentence_validation, load_bags
 
@@ -313,37 +297,8 @@ def _evaluate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _faithfulness(args: argparse.Namespace) -> int:
-    from aivhuman.mil import predict, train
-
-    features, _, checkpoint, reports = _dirs(args.smoke, args.run)
-    model, std = train.load(checkpoint)
-    calib = _calibration_slice(features, std, validation=False)
-    path = predict.faithfulness_report(model, calib, std.names, reports / "faithfulness.json")
-    print(path.read_text(encoding="utf-8"))
-    return 0
-
-
-def _robustness(args: argparse.Namespace) -> int:
-    from aivhuman.mil import robustness, train
-
-    features = config.FEATURES_DIR
-    runs = {}
-    for run in args.runs:
-        model, std = train.load(config.CHECKPOINTS_DIR / run / "model.pt")
-        runs[run] = robustness.Scorer(model, std, features)
-    raid = robustness.raid_contrasts(config.PROCESSED_DIR, config.MANIFESTS_DIR)
-    mage, commentary = robustness.mage_contrasts(config.PROCESSED_DIR, config.MANIFESTS_DIR)
-    train_bags, dev_bags, sent_bags, std = _training_bags(features, "spliced")
-    groups = robustness.group_only_models(train_bags, dev_bags, sent_bags, std.names)
-    path = config.ROBUSTNESS_REPORT_DIR / "robustness.json"
-    print(f"wrote {robustness.report(runs, raid, mage, commentary, groups, path)}")
-    return 0
-
-
 def _sentence_splits(features: Path, model: Any, std: Any) -> tuple[Any, Any, Any]:
-    """Labelled spans of seqxgpt-calib outside the selection slice, of seqxgpt-test, and of
-    dev-spliced if its features exist."""
+    """calib (minus the selection slice), test, and dev-spliced if it exists"""
     import pyarrow.parquet as pq
 
     from aivhuman.evaluate import load_manifest
@@ -389,11 +344,10 @@ def _calibrate(args: argparse.Namespace) -> int:
 
     splits = [test] if dev_spliced is None else [test, dev_spliced]
     cells = [c for s in splits for c in calibrate.evaluate(cal, s)]
-    style_cells = calibrate.evaluate(cal, test, by_style=True)
     short = calibrate.bucket_of(test.n_tokens, cal.edges) == 0
     logits, n = test.logits[short], test.n_tokens[short]
     moved = int((cal.apply(logits, n) != cal.apply(logits, n, cap=False)).sum())
-    path = calibrate.report(cal, cells, style_cells, (moved, int(short.sum())), reports)
+    path = calibrate.report(cal, cells, (moved, int(short.sum())), reports)
     for c in cells:
         print(f"{c.split:>13} {c.bucket:>6}  ECE {c.ece:.4f}  AUROC {c.auroc_raw:.4f}")
     print(f"wrote {path}")
@@ -440,8 +394,7 @@ def _report(args: argparse.Namespace) -> int:
 
     ece_splits = [test] if dev_spliced is None else [test, dev_spliced]
     cells = [c for s in ece_splits for c in calibrate.evaluate(cal, s)]
-    style_cells = calibrate.evaluate(cal, test, by_style=True)
-    path = report.write(run, doc_metrics, commentary, sent, straddling, cells, style_cells, out_dir)
+    path = report.write(run, doc_metrics, commentary, sent, straddling, cells, out_dir)
     for p in sent.points:
         c = p.cells[-1]
         print(
@@ -475,8 +428,32 @@ def _cluster(args: argparse.Namespace) -> int:
     return 0
 
 
+def _score(args: argparse.Namespace) -> int:
+    from aivhuman.mil.infer import Scorer
+
+    text = args.file.read_text(encoding="utf-8") if args.file else args.text
+    scorer = Scorer(
+        config.CHECKPOINTS_DIR / args.run / "model.pt",
+        config.EVALUATION_REPORT_DIR / "evaluation.json",
+        args.run,
+    )
+    result = scorer.score(text)
+    if args.json:
+        print(result.model_dump_json(indent=2))
+        return 0
+    for s in result.sentences:
+        mark = "FLAG" if s.flagged else ("short" if s.too_short else "")
+        top = ", ".join(f"{k} {v:+.2f}" for k, v in s.contributions)
+        sentence = result.text[s.start : s.end].replace("\n", " ")
+        print(f"{s.score:.2f} {mark:>5}  {sentence[:80]:<80}  [{top}]")
+    verdict = "flagged" if result.document_flagged else "not flagged"
+    print(f"\ndocument: p(machine) {result.document_score:.2f}, {verdict}")
+    for c in result.caveats:
+        print(f"- {c}")
+    return 0
+
+
 def _splice_group(doc_id: str) -> str:
-    """A spliced document's group: its id without the `:splice{k}` suffix."""
     return doc_id.rsplit(":splice", 1)[0]
 
 

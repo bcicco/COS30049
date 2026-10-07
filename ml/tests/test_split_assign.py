@@ -1,5 +1,3 @@
-"""Split assignment on synthetic rows: held-out routing, merging, overlap drops."""
-
 import pytest
 
 from aivhuman.schema import LABEL_HUMAN, LABEL_MACHINE
@@ -83,7 +81,7 @@ def test_raid_groups_stay_whole_except_dropped_generators() -> None:
 
 def test_duplicate_text_pulls_groups_into_one_split() -> None:
     rows = raid_corpus()
-    # Every news group shares a text with the next one, chaining them together.
+    # each news group shares a text with the next one so they all chain together
     rows += [row(f"raid:dup{g}", f"raid:g{g}", key=f"raid:h{g + 4}") for g in range(0, 396, 4)]
     out = split_raid(rows, SplitStats())
     news_splits = {n for n, rs in out.items() for r in rs if r.domain == "news"}

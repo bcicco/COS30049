@@ -1,5 +1,3 @@
-"""Lexical and repetition features"""
-
 import functools
 import math
 import re
@@ -10,11 +8,10 @@ import numpy as np
 from wordfreq import zipf_frequency
 
 MATTR_WINDOW: Final = 10
-RARE_ZIPF: Final = 3.0
-"""Words below this Zipf frequency (about 1 per million) count as rare."""
+RARE_ZIPF: Final = 3.0  # ~1 per million
 REPETITION_LOOKBACK: Final = 3
 
-# Moses splits clitics off their host ("do n't", "it 's"); rejoin them before splitting words.
+# moses splits clitics off ("do n't", "it 's") so glue them back first
 _CLITIC_RE = re.compile(r"\s+(n't|'s|'re|'ve|'ll|'d|'m)\b")
 _WORD_RE = re.compile(r"[a-z]+(?:'[a-z]+)*")
 
@@ -184,13 +181,12 @@ FUNCTION_WORDS: Final = frozenset(
 
 
 def words(text: str) -> list[str]:
-    """Lowercased word runs, independent of casing and punctuation spacing."""
     text = text.lower().replace("’", "'")  # noqa: RUF001
     return _WORD_RE.findall(_CLITIC_RE.sub(r"\1", text))
 
 
 def mattr(tokens: list[str], window: int = MATTR_WINDOW) -> float:
-    """Moving-average type-token ratio; plain TTR below one window."""
+    # plain TTR if shorter than the window
     if not tokens:
         return math.nan
     if len(tokens) <= window:
@@ -222,10 +218,8 @@ def _cosine(a: Counter[str], b: Counter[str]) -> float:
 
 
 def span_features(text: str, spans: list[tuple[int, int]]) -> np.ndarray:
-    """[n_spans, 5] MATTR, mean word length, function-word rate, rare-word rate, and max
-    content-word cosine to the preceding spans."""
-    # NOTE:
-    # NaN where a span has no words.
+    """[n_spans, 5]: mattr, word len, function rate, rare rate, max cos to prev spans"""
+    # NaN where a span has no words
     out = np.full((len(spans), 5), np.nan, dtype=np.float64)
     bags: list[Counter[str]] = []
     for i, (start, end) in enumerate(spans):

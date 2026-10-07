@@ -1,7 +1,3 @@
-"""MIL pooling, masking, standardisation, the CRF and toy fits."""
-
-import itertools
-
 import numpy as np
 import pytest
 
@@ -14,7 +10,6 @@ from aivhuman.mil.model import (
     MILConfig,
     MILModel,
     coverage,
-    crf_marginals,
     pool_lse,
     pool_topk,
 )
@@ -97,8 +92,7 @@ def test_batches_cover_every_bag_once() -> None:
 
 
 def test_fit_finds_the_planted_machine_sentence() -> None:
-    # Machine documents contain one sentence with a high value of feature 0; the head must
-    # learn a positive weight on it from document labels alone.
+    # machine docs get one sentence with a big feature 0, should learn it from doc labels only
     rng = np.random.default_rng(1)
     sizes, labels, rows, spans = [], [], [], []
     for i in range(600):
@@ -159,7 +153,7 @@ def test_gam_with_zero_hinges_is_linear() -> None:
 
 
 def test_gam_finds_a_u_shaped_signal_that_linear_cannot() -> None:
-    # One machine sentence per machine doc sits at an extreme of feature 0, in either direction.
+    # machine sentence is at -3 or +3 on feature 0, so linear cant pick it up
     rng = np.random.default_rng(4)
     sizes, labels, rows, spans = [], [], [], []
     for i in range(800):
@@ -214,103 +208,6 @@ def test_sentence_loss_uses_only_known_labels() -> None:
     labelled = _bags([2, 3], [0, 1], x, spans)
     loss = _sentence_loss(labelled, [0, 1], torch.zeros(2, 3))
     assert loss.item() == pytest.approx(np.log(2))
-    # A confident, correct logit on the known spans lowers it; padding and NaN spans never count.
+    # nan spans + padding shouldnt count
     good = torch.tensor([[9.0, 9.0, 9.0], [-9.0, 9.0, 9.0]])
     assert _sentence_loss(labelled, [0, 1], good).item() < 1e-3
-
-
-def _brute_marginals(e: list[float], trans: torch.Tensor, start: torch.Tensor) -> list[float]:
-    """Machine-state log-odds per position by enumerating every state path."""
-    n = len(e)
-    weight = {1: [0.0] * n, 0: [0.0] * n}
-    for path in itertools.product((0, 1), repeat=n):
-        score = start[path[0]].item() + sum(e[t] * path[t] for t in range(n))
-        score += sum(trans[path[t - 1], path[t]].item() for t in range(1, n))
-        for t in range(n):
-            weight[path[t]][t] += float(np.exp(score))
-    return [float(np.log(weight[1][t] / weight[0][t])) for t in range(n)]
-
-
-def test_crf_with_zero_potentials_returns_the_emissions() -> None:
-    e, mask = _pad([[0.5, -1.0, 2.0], [0.3]], 3, 0.0)
-    out = crf_marginals(e, mask, torch.zeros(2, 2), torch.zeros(2))
-    torch.testing.assert_close(out[mask], e[mask])
-
-
-def test_crf_marginals_match_brute_force() -> None:
-    torch.manual_seed(0)
-    trans, start = torch.randn(2, 2), torch.randn(2)
-    rows = [[0.5, -1.0, 2.0, 0.1, -0.4, 1.2], [0.3, -2.0], [1.0]]
-    e, mask = _pad(rows, 6, 0.0)
-    out = crf_marginals(e, mask, trans, start)
-    for i, r in enumerate(rows):
-        np.testing.assert_allclose(out[i, : len(r)], _brute_marginals(r, trans, start), rtol=1e-4)
-
-
-def test_crf_ignores_padding() -> None:
-    torch.manual_seed(1)
-    trans, start = torch.randn(2, 2), torch.randn(2)
-    rows = [[0.5, -1.0], [2.0, 0.1, -3.0, 1.0], [-0.2]]
-    narrow, m1 = _pad(rows, 4, 0.0)
-    wide, m2 = _pad(rows, 9, 50.0)
-    a = crf_marginals(narrow, m1, trans, start)
-    b = crf_marginals(wide, m2, trans, start)
-    torch.testing.assert_close(a[m1], b[m2])
-
-
-def test_sticky_crf_pools_a_run_of_weak_evidence() -> None:
-    sticky = torch.tensor([[0.5, -0.5], [-0.5, 0.5]])
-    run, mask = _pad([[-1.0, -1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, -1.0, -1.0]], 10, 0.0)
-    scattered, _ = _pad([[0.5, -1.0, 0.5, -1.0, 0.5, -1.0, 0.5, 0.5, -1.0, 0.5]], 10, 0.0)
-    in_run = crf_marginals(run, mask, sticky, torch.zeros(2))[0, 2:8]
-    alone = crf_marginals(scattered, mask, sticky, torch.zeros(2))[0][scattered[0] > 0]
-    # Six sentences at 0.5 each end up above 0.5; the same sentences scattered fall towards 0.
-    assert in_run.mean() > 0.6
-    assert in_run.mean() > alone.mean() + 0.5
-
-
-def test_crf_scores_do_not_depend_on_batch_size() -> None:
-    rng = np.random.default_rng(5)
-    sizes = list(rng.integers(1, 25, size=40))
-    bags = _bags(sizes, [0, 1] * 20, rng.normal(size=(sum(sizes), 3)).astype(np.float32))
-    model = _gam(crf=True)
-    with torch.no_grad():
-        model.stickiness.fill_(1.5)
-    a, b = score(model, bags, batch_size=2), score(model, bags, batch_size=64)
-    np.testing.assert_allclose(a.doc_logits, b.doc_logits, atol=1e-5)
-    np.testing.assert_allclose(a.sentence_logits, b.sentence_logits, atol=1e-5)
-
-
-def test_crf_learns_sticky_transitions_from_document_labels() -> None:
-    # Machine documents hold one contiguous run of weakly shifted sentences.
-    rng = np.random.default_rng(6)
-    sizes, labels, rows, spans = [], [], [], []
-    for i in range(600):
-        n = int(rng.integers(8, 16))
-        x = rng.normal(size=(n, 2))
-        s = np.zeros(n)
-        if i % 2:
-            lo = int(rng.integers(0, n - 5))
-            x[lo : lo + 5, 0] += 1.0
-            s[lo : lo + 5] = 1
-        sizes.append(n)
-        labels.append(i % 2)
-        rows.append(x)
-        spans.append(s)
-    bags = _bags(sizes, labels, np.vstack(rows).astype(np.float32), np.concatenate(spans))
-    common = {"lr": 0.05, "epochs": 15, "l1": 0.0, "tau": 2.0}
-    _, plain = fit(MILConfig(**common), bags, bags, bags)  # type: ignore[arg-type]
-    model, crf = fit(MILConfig(crf=True, **common), bags, bags, bags)  # type: ignore[arg-type]
-    assert model.stickiness.item() > 0
-    assert crf.sentence_auroc > plain.sentence_auroc
-
-
-def test_symmetric_crf_is_invariant_to_reversing_the_document() -> None:
-    model = MILModel(2, MILConfig(crf=True))
-    with torch.no_grad():
-        model.stickiness.fill_(1.2)
-    x = torch.randn(1, 7, 2)
-    mask = torch.ones(1, 7, dtype=torch.bool)
-    forward = model(x, mask)[2]
-    backward = model(x.flip(1), mask)[2]
-    torch.testing.assert_close(forward, backward.flip(1))

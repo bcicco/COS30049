@@ -1,4 +1,4 @@
-"""Sentence-level precision, recall and span overlap of calibrated sentence scores."""
+"""sentence level P/R and span overlap"""
 
 from pathlib import Path
 from typing import Final
@@ -10,26 +10,21 @@ from sklearn.metrics import average_precision_score, precision_recall_curve
 from aivhuman.evaluate import bootstrap_ci
 from aivhuman.mil.calibrate import Spans, balanced_weights, bucket_names, bucket_of
 
-OPERATING_FPRS: Final = (0.01, 0.02, 0.05)
-"""Per-sentence false-positive rates whose thresholds are fitted on the calibration spans."""
+OPERATING_FPRS: Final = (0.01, 0.02, 0.05)  # thresholds fit on calib spans
 EVEN_THRESHOLD: Final = 0.5
 
-BUCKET_COLOURS: Final = ("#86b6ef", "#3987e5", "#1c5cab", "#0d366b")
-"""Ordinal blue ramp, short to long."""
+BUCKET_COLOURS: Final = ("#86b6ef", "#3987e5", "#1c5cab", "#0d366b")  # short -> long
 OVERALL_COLOUR: Final = "#52514e"
 
 
 class PRCell(BaseModel):
-    """Precision and recall of one bucket at one threshold."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     bucket: str
     spans: int
     machine_share: float
     precision: float
-    precision_even: float
-    """Precision at an even prior: TPR / (TPR + FPR)."""
+    precision_even: float  # tpr / (tpr + fpr)
     recall: float
     fpr: float
     f1: float
@@ -38,22 +33,17 @@ class PRCell(BaseModel):
 
 
 class OperatingPoint(BaseModel):
-    """Every sentence-level metric at one threshold."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str
     threshold: float
     cells: list[PRCell]
-    iou_docs: int
-    """Documents with at least one machine sentence."""
+    iou_docs: int  # docs with >= 1 machine sentence
     iou_mean: float
     iou_median: float
-    regions_mean: float
-    """Mean number of flagged runs among machine-containing documents with any flag."""
+    regions_mean: float  # flagged runs, only over machine docs that got flagged at all
     human_docs: int
     false_highlight_rate: float
-    """Share of wholly human documents with at least one flagged sentence."""
 
 
 class SentenceReport(BaseModel):
@@ -68,7 +58,7 @@ class SentenceReport(BaseModel):
 
 
 def threshold_at_fpr(labels: np.ndarray, probs: np.ndarray, fpr: float) -> float:
-    """Lowest threshold at which at most `fpr` of human spans score at or above it."""
+    """lowest threshold with at most `fpr` of human spans >= it"""
     human = np.sort(probs[labels == 0])[::-1]
     k = int(np.floor(fpr * len(human)))
     if k >= len(human):
@@ -77,7 +67,6 @@ def threshold_at_fpr(labels: np.ndarray, probs: np.ndarray, fpr: float) -> float
 
 
 def _rates(y: np.ndarray, flag: np.ndarray) -> tuple[float, float, float, float]:
-    """Precision, even-prior precision, recall and FPR."""
     tp = float((flag & (y == 1)).sum())
     fp = float((flag & (y == 0)).sum())
     recall = tp / max(int((y == 1).sum()), 1)
@@ -103,8 +92,7 @@ def pr_cell(y: np.ndarray, probs: np.ndarray, threshold: float, bucket: str) -> 
 
 
 def doc_overlap(spans: Spans, flag: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Per document: token-weighted IoU of flagged and machine spans, flagged run count, and
-    whether it is wholly human. IoU is NaN for wholly human documents."""
+    """per doc: token weighted IoU, number of flagged runs, is_human. iou nan for human docs"""
     _, inv = np.unique(spans.doc_ids, return_inverse=True)
     y = spans.labels == 1
     w = spans.n_tokens.astype(np.float64)
@@ -120,7 +108,7 @@ def doc_overlap(spans: Spans, flag: np.ndarray) -> tuple[np.ndarray, np.ndarray,
 
 
 def _masks(spans: Spans, edges: list[int]) -> list[tuple[str, np.ndarray]]:
-    """Each length bucket with both classes present, then all spans."""
+    # skip buckets missing a class
     buckets = bucket_of(spans.n_tokens, edges)
     out = []
     for k, b in enumerate(bucket_names(edges)):
@@ -133,8 +121,7 @@ def _masks(spans: Spans, edges: list[int]) -> list[tuple[str, np.ndarray]]:
 def operating_point(
     spans: Spans, probs: np.ndarray, threshold: float, name: str, edges: list[int]
 ) -> OperatingPoint:
-    """Overall and per-bucket P/R (overall with group-bootstrap intervals), IoU and the
-    false-highlight rate at one threshold."""
+    # bootstrap ci only on the overall cell, its slow
     cells = [pr_cell(spans.labels[m], probs[m], threshold, b) for b, m in _masks(spans, edges)]
     p_ci, r_ci = bootstrap_ci(
         spans.labels,
@@ -181,7 +168,6 @@ def evaluate(
 def plot_pr(
     spans: Spans, probs: np.ndarray, report: SentenceReport, edges: list[int], path: Path
 ) -> None:
-    """Even-prior precision against recall per length bucket, with the operating points."""
     import matplotlib
 
     matplotlib.use("Agg")

@@ -1,15 +1,11 @@
-"""Re-read the ingested JSONL from disk and re-assert every invariant."""
+"""re-read the ingested jsonl and re-check everything"""
 
-# ----------------------- REASONING FOR THIS EXISTING----------------------
-
-# Loading a class Doc already validates most of the schema with model_validation decorators, which
-# is the design.  This adds what construction cannot see:
-
-# - text[start:end] really is the sentence, trimmed, for every span.
-# - n_words still matches the text it describes.
-# - doc_id is unique across *all three* sources, not just within one.
-# - the line count matches the docs in the sidecar, so a file that lost its
-#  tail is caught rather than quietly read short.
+# why this exists: loading a Doc already runs most of the validators, this checks the
+# stuff construction cant see:
+# - text[start:end] is actually the sentence, trimmed, for every span
+# - n_words still matches the text
+# - doc_id unique across all sources, not just one file
+# - line count matches the sidecar, catches a file that lost its tail
 
 from collections.abc import Iterator
 from pathlib import Path
@@ -32,8 +28,6 @@ MAX_PROBLEMS: Final = 50
 
 
 class VerifyReport(BaseModel):
-    """What one JSONL file turned out to contain."""
-
     model_config = ConfigDict(extra="forbid")
 
     path: Path
@@ -73,7 +67,6 @@ class VerifyReport(BaseModel):
 
 
 def verify_file(path: Path, *, seen_doc_ids: set[str] | None = None) -> VerifyReport:
-    """Re-read one JSONL and check every document in it"""
     report = VerifyReport(path=path)
     ids = seen_doc_ids if seen_doc_ids is not None else set()
 
@@ -95,8 +88,7 @@ def verify_file(path: Path, *, seen_doc_ids: set[str] | None = None) -> VerifyRe
             if any(s.label is not None for s in doc.sentences):
                 report.labelled_span_docs += 1
     except SchemaError as exc:
-        # A malformed line is fatal for the file: line numbers after it cannot
-        # be trusted
+        # bad line kills the whole file, cant trust line numbers after it
         report.note(f"unreadable: {exc}")
         return report
 
@@ -105,7 +97,7 @@ def verify_file(path: Path, *, seen_doc_ids: set[str] | None = None) -> VerifyRe
 
 
 def verify_all(directory: Path) -> list[VerifyReport]:
-    """Verify every `*.jsonl` in `directory`, sharing the `doc_id` set."""
+    # shares the doc_id set so dupes across files get caught
     seen: set[str] = set()
     return [verify_file(path, seen_doc_ids=seen) for path in sorted(directory.glob("*.jsonl"))]
 
@@ -117,7 +109,6 @@ def iter_problems(reports: list[VerifyReport]) -> Iterator[str]:
 
 
 def _check_doc(doc: Doc, report: VerifyReport) -> None:
-    """Everything about one document that loading it did not already prove."""
     if doc.source not in SOURCES:
         report.note(f"{doc.doc_id}: unknown source {doc.source!r}")
     if not is_nfc(doc.text):
@@ -138,8 +129,8 @@ def _check_doc(doc: Doc, report: VerifyReport) -> None:
         if span.n_words != actual:
             report.note(f"{doc.doc_id}: span {i} claims {span.n_words} words, text has {actual}")
 
-    # SeqXGPT is the only source with sentence provenance; a label anywhere else
-    # is a training leak, and a missing one there breaks ground truth.
+    # only SeqXGPT has sentence labels. anywhere else = training leak, missing
+    # in seqxgpt = broken ground truth
     labelled = sum(s.label is not None for s in doc.sentences)
     if doc.source == "seqxgpt" and labelled != len(doc.sentences):
         report.note(f"{doc.doc_id}: {len(doc.sentences) - labelled} spans without a label")
@@ -148,7 +139,6 @@ def _check_doc(doc: Doc, report: VerifyReport) -> None:
 
 
 def _check_sidecar(path: Path, report: VerifyReport) -> None:
-    """Compare the file against the sidecar the ingest wrote beside it."""
     sidecar = path.with_name(f"{path.stem}.stats.json")
     if not sidecar.exists():
         report.note(f"no sidecar at {sidecar.name}; provenance for this file is unknown")

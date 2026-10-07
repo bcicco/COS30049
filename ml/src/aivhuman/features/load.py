@@ -1,5 +1,3 @@
-"""Documents with their sentence spans, for feature extraction."""
-
 import random
 from pathlib import Path
 from typing import Final
@@ -19,18 +17,14 @@ SAMPLE_SEED: Final = 20240501
 
 
 class SpanDoc(EvalDoc):
-    """An EvalDoc plus the span fields features are computed from."""
-
     spans: list[tuple[int, int]]
     span_tokens: list[int]
-    span_labels: list[int] | None
-    """Sentence labels, SeqXGPT only."""
+    span_labels: list[int] | None  # seqxgpt only
     straddles: list[bool]
-    detok_style: str
 
 
 def load_span_docs(processed_dir: Path, manifests_dir: Path, split: str) -> list[SpanDoc]:
-    """Every document in a split, in file order. Train is subsampled per group."""
+    # train gets subsampled per group
     keep = load_manifest(manifests_dir, split)
     docs = list(_read(processed_dir / f"{SPLIT_SOURCE[split]}.jsonl", keep))
     if split == "train":
@@ -63,7 +57,6 @@ def _read(path: Path, keep: dict[str, str]) -> list[SpanDoc]:
                     if d["source"] == "seqxgpt"
                     else None,
                     straddles=[s.get("straddles_boundary", False) for s in sentences],
-                    detok_style=d["meta"].get("detok_style", "unknown"),
                 )
             )
     return out

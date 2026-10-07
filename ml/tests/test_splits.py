@@ -1,14 +1,3 @@
-"""Split disjointness — the assertion Phase 2 drops into.
-
-`ml/PLAN.md` says this test will fail at some point during the project and that
-catching it automatically is worth the twenty minutes. It is written now, while
-nothing depends on it, so that Phase 2 has somewhere to land rather than an
-excuse.
-
-It skips when `ml/manifests/` is empty, so it runs in CI with no data present
-and starts asserting the moment the first manifest is written.
-"""
-
 import json
 from collections import Counter
 from pathlib import Path
@@ -18,8 +7,7 @@ import pytest
 from aivhuman.config import MANIFESTS_DIR
 from aivhuman.schema import SPLIT_ROLES
 
-#: Splits from the Phase 2 table in `ml/PLAN.md`. A manifest outside this set is
-#: a typo, and a typo that silently creates a new split is worse than a failure.
+# anything else is probably a typo
 KNOWN_SPLITS = frozenset(
     {
         "train",
@@ -39,7 +27,6 @@ def manifests() -> list[Path]:
 
 
 def load(path: Path) -> dict[str, str]:
-    """A manifest maps `doc_id` to `group_id`."""
     payload = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(payload, dict) and "docs" in payload:
         docs = payload["docs"]
@@ -56,12 +43,7 @@ requires_manifests = pytest.mark.skipif(
 
 
 def test_split_roles_are_the_source_level_vocabulary() -> None:
-    """Runs with no data: `split_role` is not a Phase 2 split name.
-
-    The confusion this guards against is real -- `train_pool` is what an adapter
-    stamps on a document, and `train` is what Phase 2 decides. Mixing them up
-    would put every RAID document in the training split by construction.
-    """
+    # train_pool is the adapter role, train is the actual split. dont mix them up
     assert "train" not in SPLIT_ROLES
     assert "train_pool" in SPLIT_ROLES
     assert not (KNOWN_SPLITS & SPLIT_ROLES)
@@ -75,12 +57,6 @@ def test_manifest_names_are_known_splits() -> None:
 
 @requires_manifests
 def test_no_group_id_appears_in_two_splits() -> None:
-    """The assertion the whole of Phase 2 exists to satisfy.
-
-    A document and the human text it derives from share a `group_id`. If that
-    group straddles two splits, the model is evaluated on text it trained on,
-    and every number downstream is inflated in the direction nobody checks.
-    """
     groups_by_split = {path.stem: set(load(path).values()) for path in manifests()}
     owners: Counter[str] = Counter()
     for groups in groups_by_split.values():
@@ -107,12 +83,7 @@ def test_no_doc_id_appears_in_two_splits() -> None:
 
 @requires_manifests
 def test_seqxgpt_splits_are_disjoint_by_base_document() -> None:
-    """SeqXGPT's calibration and test halves must split on the base document.
-
-    The same human source appears across several generator variants, so
-    splitting on the variant puts near-identical text either side and the
-    calibration fits on the text it is later measured against.
-    """
+    # same human source shows up under several generators, so split on the base doc
     calib = MANIFESTS_DIR / "seqxgpt-calib.json"
     test = MANIFESTS_DIR / "seqxgpt-test.json"
     if not (calib.exists() and test.exists()):

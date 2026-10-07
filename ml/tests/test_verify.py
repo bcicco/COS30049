@@ -1,12 +1,3 @@
-"""Verification of the ingested JSONL.
-
-The failures worth catching here all produce a file that parses. A span whose
-`n_words` drifted, a text that lost its NFC normalisation, a file truncated
-mid-write, two corpora built under different label rules -- none of those raise
-when the file is read, and all of them are wrong in ways that only surface as
-odd model behaviour weeks later.
-"""
-
 import json
 from pathlib import Path
 from typing import Any
@@ -24,7 +15,6 @@ def write_jsonl(path: Path, payloads: list[dict[str, Any]]) -> Path:
 
 
 def as_payload(doc: Any) -> dict[str, Any]:
-    """A document as the dict that lands on disk, so a test can corrupt it."""
     return json.loads(doc_to_json(doc))
 
 
@@ -57,11 +47,6 @@ def test_a_good_file_verifies_clean(tmp_path: Path) -> None:
 
 
 def test_a_drifted_word_count_is_caught(tmp_path: Path) -> None:
-    """`n_words` is the one stored field that can be rechecked without a tokenizer.
-
-    Nothing validates it at construction, so a span edited by hand or an
-    adapter bug that miscounts would otherwise reach Phase 4 unnoticed.
-    """
     payload = as_payload(raid_doc())
     payload["sentences"][0]["n_words"] = 99
     path = write_jsonl(tmp_path / "raid.jsonl", [payload])
@@ -74,7 +59,6 @@ def test_a_drifted_word_count_is_caught(tmp_path: Path) -> None:
 
 
 def test_an_untrimmed_span_is_caught(tmp_path: Path) -> None:
-    """A span that includes its trailing space misaligns every highlight by one."""
     payload = as_payload(raid_doc())
     payload["sentences"][0]["end"] = payload["sentences"][0]["end"] + 1
     payload["sentences"][0]["n_words"] = 2
@@ -88,7 +72,6 @@ def test_an_untrimmed_span_is_caught(tmp_path: Path) -> None:
 
 
 def test_non_nfc_text_is_rejected_at_load(tmp_path: Path) -> None:
-    """Caught by the schema, and reported as an unreadable file rather than ignored."""
     payload = as_payload(raid_doc())
     payload["text"] = "café is decomposed. Two sentences here."
     path = write_jsonl(tmp_path / "raid.jsonl", [payload])
@@ -101,11 +84,7 @@ def test_non_nfc_text_is_rejected_at_load(tmp_path: Path) -> None:
 
 
 def test_a_truncated_file_is_caught_by_its_sidecar(tmp_path: Path) -> None:
-    """The case the atomic rename exists to prevent, checked from the other side.
-
-    A file that lost its tail parses perfectly and is simply short. Only the
-    recorded document count reveals it.
-    """
+    # a truncated file still parses fine, only the sidecar count shows it
     path = good_raid(tmp_path, 3)
     write_sidecar(path, 5)
 
@@ -117,7 +96,6 @@ def test_a_truncated_file_is_caught_by_its_sidecar(tmp_path: Path) -> None:
 
 
 def test_a_missing_sidecar_is_a_problem(tmp_path: Path) -> None:
-    """Without one there is no record of which label rules produced the file."""
     path = write_jsonl(tmp_path / "raid.jsonl", [as_payload(raid_doc())])
 
     report = verify_file(path)
@@ -136,11 +114,7 @@ def test_a_sidecar_that_was_not_green_is_a_problem(tmp_path: Path) -> None:
 
 
 def test_a_doc_id_shared_between_two_corpora_is_caught(tmp_path: Path) -> None:
-    """`doc_id` has to be unique across all three corpora, not within one.
-
-    Phase 2's manifests are keyed by `doc_id`, so a collision would silently
-    drop one of the two documents from every split that references it.
-    """
+    # manifests are keyed by doc_id so it has to be unique across corpora
     clash = as_payload(raid_doc(doc_id="raid:shared"))
     first = write_jsonl(tmp_path / "raid.jsonl", [clash])
     write_sidecar(first, 1)
@@ -163,7 +137,6 @@ def test_seqxgpt_keeps_its_sentence_labels_and_others_do_not(tmp_path: Path) -> 
 
 
 def test_problems_are_capped_but_still_counted(tmp_path: Path) -> None:
-    """A corrupt file produces one problem per document, and nobody reads 400,000."""
     payload = as_payload(raid_doc())
     payload["sentences"][0]["n_words"] = 99
     payloads = [dict(payload, doc_id=f"raid:doc-{i}") for i in range(80)]

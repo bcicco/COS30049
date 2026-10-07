@@ -1,17 +1,9 @@
-"""Cross-corpus overlap and the Phase 1 report.
-
-The overlap number decides what Phase 7's cross-corpus result means. If a RAID
-training document also sits in MAGE, the transfer headline is partly a
-memorisation measurement, and that has to be known before the number is quoted.
-"""
-
 import csv
 from pathlib import Path
 from typing import Any
 
 import orjson
 
-from aivhuman.overlap import overlap_report
 from aivhuman.report import FINDINGS, LENGTH_BUCKETS, build, metric_rows, summarise
 from aivhuman.schema import LABEL_HUMAN, LABEL_MACHINE, Doc, SentenceSpan, doc_to_json
 
@@ -27,14 +19,8 @@ def doc(
     group_id: str | None = None,
     split_role: str = "train_pool",
     n_tokens: int = 10,
-    style: str = "natural",
 ) -> Doc:
-    """One document with a single span covering its whole text.
-
-    SeqXGPT spans must carry a label and no other source may, so the span is
-    built from the source rather than passed in -- the schema enforces this and
-    a helper that ignored it could not build a valid SeqXGPT document at all.
-    """
+    # seqxgpt spans need a label, other sources cant have one
     span_label = label if source == "seqxgpt" else None
     return Doc(
         doc_id=doc_id,
@@ -55,7 +41,6 @@ def doc(
             )
         ],
         label_raw="gpt4",
-        meta={"detok_style": style},
     )
 
 
@@ -66,71 +51,6 @@ def write(path: Path, docs: list[Doc]) -> Path:
 
 def sidecar(path: Path, payload: dict[str, Any]) -> None:
     path.with_name(f"{path.stem}.stats.json").write_bytes(orjson.dumps(payload))
-
-
-# --------------------------------------------------------------------------- #
-# Overlap
-# --------------------------------------------------------------------------- #
-
-
-def test_no_shared_text_is_clean(tmp_path: Path) -> None:
-    write(tmp_path / "raid.jsonl", [doc("raid", "raid:a", "One text here.")])
-    write(tmp_path / "mage.jsonl", [doc("mage", "mage:a", "A different text.")])
-
-    stats = overlap_report(tmp_path)
-
-    assert stats.shared_keys == {"mage|raid": 0}
-    assert stats.is_clean
-
-
-def test_the_same_document_in_two_corpora_is_found(tmp_path: Path) -> None:
-    """The leak that would make cross-corpus transfer a memorisation result."""
-    shared = "The quick brown fox jumped over the lazy dog."
-    write(tmp_path / "raid.jsonl", [doc("raid", "raid:a", shared)])
-    write(tmp_path / "mage.jsonl", [doc("mage", "mage:a", shared)])
-
-    stats = overlap_report(tmp_path)
-
-    assert stats.shared_keys["mage|raid"] == 1
-    assert not stats.is_clean
-    assert stats.examples["mage|raid"] == [("mage:a", "raid:a")]
-
-
-def test_matching_ignores_detokenisation_and_case(tmp_path: Path) -> None:
-    """SeqXGPT's PubMed text is Moses-spaced and lowercased; RAID's is not.
-
-    An exact string match would miss the same document arriving under two
-    conventions, which is the realistic form of this leak.
-    """
-    write(tmp_path / "raid.jsonl", [doc("raid", "raid:a", "Disease is here. Next one.")])
-    write(
-        tmp_path / "seqxgpt.jsonl", [doc("seqxgpt", "seqxgpt:a", "disease is here . next  one .")]
-    )
-
-    stats = overlap_report(tmp_path)
-
-    assert stats.shared_keys["raid|seqxgpt"] == 1
-
-
-def test_duplicates_within_one_corpus_are_counted_separately(tmp_path: Path) -> None:
-    """An internal duplicate is a statement about the corpus, not the evaluation."""
-    text = "Repeated text appears twice."
-    write(
-        tmp_path / "raid.jsonl",
-        [doc("raid", "raid:a", text), doc("raid", "raid:b", text), doc("raid", "raid:c", "Other.")],
-    )
-
-    stats = overlap_report(tmp_path)
-
-    assert stats.docs["raid"] == 3
-    assert stats.unique_keys["raid"] == 2
-    assert stats.internal_duplicate_docs["raid"] == 1
-    assert stats.is_clean, "an internal duplicate is not a cross-corpus leak"
-
-
-# --------------------------------------------------------------------------- #
-# Report
-# --------------------------------------------------------------------------- #
 
 
 def test_summarise_counts_what_the_report_quotes(tmp_path: Path) -> None:
@@ -156,7 +76,7 @@ def test_summarise_counts_what_the_report_quotes(tmp_path: Path) -> None:
 
 
 def test_token_limits_are_counted_for_the_phase_4_windowing_path(tmp_path: Path) -> None:
-    """Documents over 8,192 tokens cannot be encoded in one pass."""
+    # docs over 8192 tokens dont fit in one pass
     path = write(
         tmp_path / "raid.jsonl",
         [
@@ -171,7 +91,6 @@ def test_token_limits_are_counted_for_the_phase_4_windowing_path(tmp_path: Path)
 
 
 def test_content_keys_are_collected_during_the_summary_pass(tmp_path: Path) -> None:
-    """One pass over 2.4 GB, not two: the report and the overlap share it."""
     path = write(tmp_path / "raid.jsonl", [doc("raid", "raid:a", "Some text here.")])
     keys: dict[str, tuple[str, int]] = {}
 
@@ -228,6 +147,5 @@ def test_build_writes_the_csvs_and_data(tmp_path: Path) -> None:
 
 
 def test_the_bucket_edges_match_the_calibration_plan() -> None:
-    """Phase 6 fits one calibrator per bucket, so the edges are a contract."""
     assert LENGTH_BUCKETS[0][0] == 0
     assert [hi for _lo, hi in LENGTH_BUCKETS][:3] == [15, 30, 60]

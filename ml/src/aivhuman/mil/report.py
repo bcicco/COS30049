@@ -1,4 +1,4 @@
-"""The evaluation report shipped with a model: document, sentence and calibration metrics."""
+"""evaluation.json (doc + sentence + calibration)"""
 
 from pathlib import Path
 from typing import Final
@@ -19,10 +19,8 @@ def write(
     sentences: SentenceReport,
     straddling: int,
     cells: list[CellMetrics],
-    style_cells: list[CellMetrics],
     out_dir: Path,
 ) -> Path:
-    """Write `evaluation.json` to `out_dir`."""
     payload = {
         "run": run,
         "documents": [m.model_dump() for m in doc_metrics],
@@ -30,7 +28,6 @@ def write(
         "sentences": sentences.model_dump(),
         "straddling_excluded": straddling,
         "calibration": [c.model_dump() for c in cells],
-        "calibration_by_style": [c.model_dump() for c in style_cells],
         "ece_target": ECE_TARGET,
     }
     out_dir.mkdir(parents=True, exist_ok=True)

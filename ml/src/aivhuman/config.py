@@ -1,5 +1,3 @@
-"""Paths, environment resolution, and console encoding."""
-
 # ******************** IMPORTANT ******************************
 # The stdout reconfig. may look like overkill, but it makes life much easier
 # for debugging on Windows w/ stdout
@@ -36,7 +34,6 @@ EVALUATION_REPORT_DIR: Final = ML_ROOT / "reports" / "phase7"
 
 
 def configure_stdio() -> None:
-    """Force UTF-8 on stdout/stderr, replacing anything unencodable."""
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
@@ -44,7 +41,6 @@ def configure_stdio() -> None:
 
 
 def ensure_dirs() -> None:
-    """Create the data and report directories if they are missing."""
     for path in (
         RAW_DIR,
         INTERIM_DIR,
@@ -57,7 +53,7 @@ def ensure_dirs() -> None:
 
 
 def workers() -> int:
-    """Segmentation worker count. Leaves two cores for the OS and the writer."""
+    # leaves 2 cores free for the OS + writer
     # NOTE: Reconfigure this as you want, this is what works best for me on my 8-core but may
     # need adjusting on your machine.
     override = os.environ.get("AIVHUMAN_WORKERS")

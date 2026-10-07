@@ -54,34 +54,25 @@ def label_name(label: int) -> str:
 # ****** NOTE ******
 # bag = DOC, items = SENTENCES
 class SentenceSpan(BaseModel):
-    """One sentence, as character offsets into the parent attribute (Doc.text)"""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     start: Offset
 
-    end: Offset
-    """character offset. `text[start:end]` is the sentence."""
+    end: Offset  # text[start:end] is the sentence
 
-    n_tokens: Annotated[int, Field(ge=0)]
-    """Not confirmed, likely to be ModernBERT-base tokens"""
+    n_tokens: Annotated[int, Field(ge=0)]  # not confirmed, prob ModernBERT-base tokens
 
-    n_words: Annotated[int, Field(ge=0)]
-    """Whitespace-delimited runs. A cheap tokenizer-independent sanity check."""
+    n_words: Annotated[int, Field(ge=0)]  # whitespace split, cheap sanity check
 
-    label: Label | None = None
-    """Sentence provenance where it is *known* (likely to be SeqXGPT only for sentence calib.) """
+    label: Label | None = None  # only where known (SeqXGPT only for sentence calib.)
     # ***** IMPORTANT *******
     # The model is multiple-instance precisely because sentence labels are
     # unavailable at training time we need to make sure not to leak them here
 
     machine_char_frac: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
-    """Fraction of this span's characters on the machine side of the boundary, used to denote
-    bizzare parsing.
-    """
+    # frac of chars on the machine side of the boundary, flags bizzare parsing
 
-    straddles_boundary: bool = False
-    """True when this span contains both human and machine characters, see above ^^"""
+    straddles_boundary: bool = False  # has both human + machine chars, see above ^^
 
     # ***** IMPORTANT *******
     # For SeqGXPT, the boundary will be a sentence boundary, so straddle means:
@@ -95,7 +86,7 @@ class SentenceSpan(BaseModel):
 
     @model_serializer
     def _serialise(self) -> dict[str, Any]:
-        """Serialise, omitting the optional keys at their defaults."""
+        # skip optional keys when theyre at default
         out: dict[str, Any] = {
             "start": self.start,
             "end": self.end,
@@ -112,44 +103,21 @@ class SentenceSpan(BaseModel):
 
 
 class Doc(BaseModel):
-    """A document with its sentence spans, normalised across all three corpora."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    doc_id: str = Field(min_length=1)
-    """ {source}:{local_id} Globally unique across all three corpora."""
-
-    text: str
-    """NFC-normalised document text. Verbatim in every other respect."""
-
+    doc_id: str = Field(min_length=1)  # {source}:{local_id}
+    text: str  # NFC, otherwise verbatim
     label: Label
-    """Canonical polarity: [see final: datatypes]"""
-
     source: str
-    """One of data SOURCES."""
-
-    domain: str | None
-    """Genre/corpus of origin. None for SeqXGPT (records no domain)."""
-
+    domain: str | None  # None for SeqXGPT, it has no domain
     generator: str | None
-    """Model that produced the text. None for human documents."""
-
-    group_id: str = Field(min_length=1)
-    """Leak-free grouping unit. No group_id may span two Phase 2 splits."""
-
+    group_id: str = Field(min_length=1)  # a group can never be in two splits
     split_role: str
-    """One of data SPLIT_ROLES."""
-
     sentences: list[SentenceSpan]
-    """Ordered, non-overlapping spans covering every non-whitespace character."""
-
     label_raw: str = Field(min_length=1)
-    """The *original* fine-grained label, verbatim."""
-
     # NOTE RAID's model, MAGE's src, SeqXGPT's generator name
 
-    meta: dict[str, Any] = Field(default_factory=dict)
-    """Per-source provenance, can be dropped"""
+    meta: dict[str, Any] = Field(default_factory=dict)  # per-source stuff, can be dropped
 
     @model_validator(mode="after")
     def _check_enums_and_ids(self) -> Self:
@@ -162,8 +130,8 @@ class Doc(BaseModel):
         if not self.group_id.startswith(f"{self.source}:"):
             raise ValueError(f"group_id {self.group_id!r} lacks the source prefix")
         if self.label == LABEL_HUMAN and self.generator is not None and self.source != "mage":
-            # MAGE's paraphrase testbed labels paraphrased human text as machine,
-            # so it is the only case where a human doc has a generator name.
+            # MAGE para testbed labels paraphrased human text as machine, only
+            # case where a human doc has a generator
             raise ValueError(f"human doc names generator {self.generator!r}")
         return self
 
@@ -175,7 +143,6 @@ class Doc(BaseModel):
 
     @model_validator(mode="after")
     def _check_span_coverage(self) -> Self:
-        """Spans must partition the document's non-whitespace content."""
         # ****** NOTE ****** performs:
         # Ordering
         # Disjointness
@@ -199,8 +166,6 @@ class Doc(BaseModel):
 
     @model_validator(mode="after")
     def _check_sentence_labels(self) -> Self:
-        """SeqXGPT's labels must be complete; no other source may carry any."""
-
         # ***************** NOTE ********************
         # Only SeqXGPT has sentence-level labels
         # All for calibration
@@ -216,12 +181,11 @@ class Doc(BaseModel):
 
 
 def doc_to_json(doc: Doc) -> bytes:
-    """Serialise to a single JSONL line (no trailing newline)."""
+    # no trailing newline
     return orjson.dumps(doc.model_dump())
 
 
 def doc_from_json(line: bytes | str) -> Doc:
-    """Parse a JSONL line back into a fully validated :class:`Doc`."""
     try:
         return Doc.model_validate(orjson.loads(line))
     except ValidationError as exc:
@@ -231,7 +195,7 @@ def doc_from_json(line: bytes | str) -> Doc:
 
 
 def validate_doc(doc: Doc) -> None:
-    """Re-validate an existing document, used in testing"""
+    # used in testing
     try:
         Doc.model_validate(doc.model_dump())
     except ValidationError as exc:
@@ -239,7 +203,6 @@ def validate_doc(doc: Doc) -> None:
 
 
 def iter_jsonl(path: str | Path) -> Iterator[Doc]:
-    """Yield validated :class:`Doc` objects from a JSONL file."""
     with Path(path).open("rb") as fh:
         for lineno, line in enumerate(fh, start=1):
             if not line.strip():

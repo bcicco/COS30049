@@ -1,5 +1,3 @@
-"""The DAIGT adapter, from CSV row to :class:`Doc`."""
-
 import csv
 from collections.abc import Sequence
 from pathlib import Path

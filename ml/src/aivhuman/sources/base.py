@@ -1,6 +1,4 @@
-"""Fetching raw corpus files from Hugging Face and GitHub, just a downloader utility, not a data
-loader.
-"""
+"""download raw corpus files from HF / github"""
 
 import time
 import urllib.parse
@@ -20,8 +18,6 @@ def fetch_hf_file(
     revision: str | None = None,
     attempts: int = 8,
 ) -> Path:
-    """Download one file from a HF dataset repo into `dest_dir`."""
-
     # ************* Note **************
     # Retries on transport errors because they occured in testing....
     #  Each retry resumes from the partial `.incomplete` file, so a drop
@@ -59,7 +55,7 @@ def fetch_github_raw(
     dest_dir: Path,
     timeout: int = 300,
 ) -> Path:
-    """Download one file from a GitHub repo's main branch"""
+    # always main branch
     dest_dir.mkdir(parents=True, exist_ok=True)
     quoted = urllib.parse.quote(path)
     url = f"https://raw.githubusercontent.com/{repo}/main/{quoted}"

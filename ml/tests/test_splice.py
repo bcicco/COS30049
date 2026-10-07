@@ -1,5 +1,3 @@
-"""Spliced mixed documents: text, offsets and sentence labels line up."""
-
 import pytest
 
 pytest.importorskip("sklearn")
@@ -28,7 +26,6 @@ def _doc(doc_id: str, label: int, sentences: list[str], group: str = "raid:g0") 
         span_tokens=[len(s.split()) for s in sentences],
         span_labels=None,
         straddles=[False] * len(spans),
-        detok_style="natural",
     )
 
 

@@ -1,4 +1,4 @@
-"""Mixed human/machine documents spliced from RAID groups, for within-document contrast."""
+"""spliced human/machine docs from RAID groups"""
 
 # TLDR;
 # RAID is 100% human or machine. Document labels solely reward any document level cue
@@ -18,14 +18,12 @@ SEED: Final = 20240502
 
 
 def _attack(d: SpanDoc) -> str:
-    """The `@attack` suffix of an adversarial document's breakdown, or `""` for a clean one."""
     return d.breakdown.partition("@")[2]
 
 
 def splice(
     first: SpanDoc, second: SpanDoc, n_first: int, start_second: int, doc_id: str
 ) -> SpanDoc:
-    """`first`'s first `n_first` sentences, a space, then `second`'s from `start_second` on."""
     a_end = first.spans[n_first - 1][1]
     b_start = second.spans[start_second][0]
     shift = a_end + 1 - b_start
@@ -46,14 +44,13 @@ def splice(
         span_tokens=[*first.span_tokens[:n_first], *second.span_tokens[start_second:]],
         span_labels=sentence_labels,
         straddles=[False] * len(spans),
-        detok_style=first.detok_style,
     )
 
 
 def build(
     docs: Sequence[SpanDoc], per_group: int = SPLICES_PER_GROUP, seed: int = SEED
 ) -> list[SpanDoc]:
-    """Spliced documents for every group with a human doc of 2+ sentences and a machine doc."""
+    # needs a human doc w/ 2+ sentences and a machine doc in the group
     rng = random.Random(seed)
     human: dict[tuple[str, str], SpanDoc] = {}
     machine: dict[tuple[str, str], list[SpanDoc]] = defaultdict(list)

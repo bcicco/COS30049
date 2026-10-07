@@ -1,5 +1,4 @@
-"""Text primitives shared by every source adapter.
+"""Shared text helpers for the source adapters.
 
-Order matters and is enforced by tests: NFC normalisation happens once, before
-any offset is computed, and nothing re-normalises afterwards.
+NFC happens once before any offsets are computed, nothing re-normalises after (tests check).
 """

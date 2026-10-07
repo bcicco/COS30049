@@ -17,7 +17,6 @@ from aivhuman.mil.calibrate import (
 
 
 def _data(n: int, seed: int, share: float = 0.5) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Logits whose true even-prior probability is sigmoid(logit), across every bucket."""
     rng = np.random.default_rng(seed)
     labels = (rng.random(n) < share).astype(int)
     logits = rng.normal(0, 1.5, n) + np.where(labels == 1, 1.0, -1.0)
@@ -59,7 +58,7 @@ def test_fit_is_monotone_and_well_calibrated_out_of_sample() -> None:
 
 
 def test_balanced_ece_ignores_the_base_rate() -> None:
-    # Class-conditional N(+-1, 1.5): the even-prior probability is sigmoid(2x / 1.5**2).
+    # x ~ N(+-1, 1.5) per class so true prob at even prior is sigmoid(2x / 1.5**2)
     rng = np.random.default_rng(3)
     for share in (0.5, 0.8):
         labels = (rng.random(50_000) < share).astype(int)
@@ -104,7 +103,6 @@ def test_evaluate_reports_every_bucket_and_the_whole_split() -> None:
         labels=labels,
         logits=logits,
         n_tokens=n_tokens,
-        styles=np.array(["natural", "moses_lower"] * 4_000),
         groups=np.arange(8_000) // 4,
         doc_ids=np.arange(8_000) // 4,
         span_idx=np.arange(8_000) % 4,
@@ -112,5 +110,3 @@ def test_evaluate_reports_every_bucket_and_the_whole_split() -> None:
     cells = evaluate(cal, spans)
     assert [c.bucket for c in cells] == [*bucket_names(), "all"]
     assert all(isinstance(c, CellMetrics) and c.ece_ci is not None for c in cells)
-    styles = evaluate(cal, spans, by_style=True)
-    assert {c.style for c in styles} == {"natural", "moses_lower"}

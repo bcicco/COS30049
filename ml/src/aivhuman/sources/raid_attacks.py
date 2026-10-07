@@ -1,4 +1,4 @@
-"""RAID's adversarial variants, matched to the clean documents they were derived from."""
+"""RAID adversarial variants matched back to their clean docs"""
 
 import random
 from collections.abc import Iterator
@@ -24,22 +24,19 @@ TRAIN_ATTACKS: Final = (
     "synonym",
     "upper_lower",
 )
+# defang undoes these before segmenting, so eval only
 DEFANGED_ATTACKS: Final = ("homoglyph", "whitespace", "zero_width_space")
-"""Undone by `defang` before segmentation, so evaluated but never trained on."""
 ALL_ATTACKS: Final = TRAIN_ATTACKS + DEFANGED_ATTACKS
 
 ADV_PARENT: Final = {"train-adv": "train", "dev-adv": "dev", "raid-ood-adv": "raid-ood"}
-"""Adversarial split -> the clean split its documents are derived from."""
-EVAL_PER_CLASS: Final = 1000
-"""Clean documents per class sampled for evaluation, each paired with every attack."""
+EVAL_PER_CLASS: Final = 1000  # clean docs per class, each gets every attack
 SEED: Final = 20240503
 
+# (clean row id, attack) -> (adv split, group_id)
 Wanted = dict[tuple[str, str], tuple[str, str]]
-"""(clean RAID row id, attack) -> (adversarial split, group_id)."""
 
 
 def _clean_docs(features: Path) -> list[tuple[str, int]]:
-    """(doc_id, label) of every document in a clean feature file, in file order."""
     t = pq.read_table(features, columns=["doc_id", "span_idx", "label"])
     t = t.filter(pc.equal(t["span_idx"], 0))
     return list(zip(t["doc_id"].to_pylist(), t["label"].to_pylist(), strict=True))
@@ -50,13 +47,9 @@ def _row_id(doc_id: str) -> str:
 
 
 def select(features_dir: Path, groups: dict[str, dict[str, str]], limit: int | None) -> Wanted:
-    """Which attacked rows each adversarial split holds.
-
-    Train pairs every clean train document with one training attack, shared across its group
-    so splices never mix attacks. Evaluation splits pair a fixed per-class sample of clean
-    documents with every attack, so each attack is compared on the same documents.
-    `groups` maps each clean split to its manifest.
-    """
+    """Pick the attacked rows for each adv split. groups = clean split -> manifest"""
+    # train: one attack per group so splices dont mix attacks
+    # eval: same per class sample for every attack so theyre comparable
     rng = random.Random(SEED)
     out: Wanted = {}
     for adv, parent in ADV_PARENT.items():
@@ -80,7 +73,6 @@ def select(features_dir: Path, groups: dict[str, dict[str, str]], limit: int | N
 
 
 def load_rows(by_attack: Path, wanted: Wanted) -> Iterator[raid.RawRow]:
-    """The attacked rows named in `wanted`, read from the hive-partitioned parquet."""
     ids = sorted({row_id for row_id, _ in wanted})
     dataset = ds.dataset(by_attack, format="parquet", partitioning="hive")
     expr = (ds.field("attack") != "none") & ds.field("adv_source_id").isin(ids)
@@ -92,5 +84,4 @@ def load_rows(by_attack: Path, wanted: Wanted) -> Iterator[raid.RawRow]:
 
 
 def to_doc(row: raid.RawRow, seg: Segmenter) -> Doc | None:
-    """`raid.to_doc` on the defanged generation. Pure, so it can run in a worker process."""
     return raid.to_doc(row.model_copy(update={"generation": defang(row.generation)}), seg)

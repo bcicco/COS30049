@@ -1,1 +1,1 @@
-"""Document-level baselines: tf-idf + LR and a plain ModernBERT classifier."""
+"""doc level baselines (tfidf+LR, modernbert)"""

@@ -1,5 +1,3 @@
-"""Sentence-level precision, recall, thresholds and span overlap."""
-
 import numpy as np
 import pytest
 
@@ -19,7 +17,6 @@ def _spans(labels: list[int], docs: list[int], n_tokens: list[int] | None = None
         labels=np.array(labels),
         logits=np.zeros(n),
         n_tokens=np.array(n_tokens or [20] * n),
-        styles=np.array(["natural"] * n),
         groups=docs_arr,
         doc_ids=docs_arr,
         span_idx=idx,

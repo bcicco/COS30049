@@ -1,5 +1,3 @@
-"""Token counting and span attribution."""
-
 import pytest
 
 from aivhuman.text.tokens import N_SPECIAL_TOKENS, count_tokens, tokenizer
@@ -21,8 +19,6 @@ class _FakeTokenizer:
 
 @pytest.fixture
 def fake_tokens(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    """Install a tokenizer with caller-supplied offsets."""
-
     def install(offsets: list[tuple[int, int]]) -> None:
         monkeypatch.setattr(
             "aivhuman.text.tokens.tokenizer",
@@ -42,12 +38,7 @@ def test_tokens_partition_across_spans(fake_tokens) -> None:  # type: ignore[no-
 
 
 def test_overlapping_offsets_land_in_one_span_each(fake_tokens) -> None:  # type: ignore[no-untyped-def]
-    """A multi-byte character split across BPE tokens yields overlapping offsets.
-
-    The real tokenizer does this: an emoji produced `(12, 14)` and `(13, 14)`.
-    Midpoint attribution keeps the counts a partition; containment would double
-    count or drop.
-    """
+    # real tokenizer gave (12, 14) and (13, 14) for an emoji, midpoint keeps it a partition
     text = "x" * 20
     fake_tokens([(12, 14), (13, 14)])
     total, per = count_tokens(text, [(0, 10), (12, 20)])
@@ -56,7 +47,6 @@ def test_overlapping_offsets_land_in_one_span_each(fake_tokens) -> None:  # type
 
 
 def test_tokens_in_gaps_count_for_the_document_not_a_span(fake_tokens) -> None:  # type: ignore[no-untyped-def]
-    """Whitespace between sentences is real text; it just belongs to no sentence."""
     text = "ab\n\ncd"
     fake_tokens([(0, 2), (2, 4), (4, 6)])
     total, per = count_tokens(text, [(0, 2), (4, 6)])
@@ -82,13 +72,7 @@ def test_empty_text_and_no_spans(fake_tokens) -> None:  # type: ignore[no-untype
 
 @pytest.mark.network
 def test_modernbert_offsets_are_character_based() -> None:
-    """The assumption the whole span-alignment design rests on.
-
-    `tokenizers` offsets are byte-based for some ByteLevel-BPE configurations
-    and character-based for others. If this were byte-based we would need a
-    byte-to-character map per document, and every `n_tokens` would be subtly
-    wrong in a way no other assertion catches.
-    """
+    # some bpe configs give byte offsets, we assume char offsets everywhere
     tok = tokenizer()
     text = "Héllo wörld. 😀 naïve café — test."
     enc = tok.encode(text, add_special_tokens=False)
@@ -101,7 +85,6 @@ def test_modernbert_offsets_are_character_based() -> None:
 
 @pytest.mark.network
 def test_special_token_count() -> None:
-    """The 8192-token context limit counts CLS and SEP, so the delta is reported."""
     tok = tokenizer()
     text = "One sentence here."
     bare = len(tok.encode(text, add_special_tokens=False).ids)

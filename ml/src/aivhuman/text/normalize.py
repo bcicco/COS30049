@@ -1,4 +1,4 @@
-"""Unicode normalisation, offset-safe boundary carrying, and stable hashing."""
+"""unicode normalisation, carrying offsets through NFC, stable hashing"""
 
 # ************ NOTE ************
 # I did a big deep dive into unicode normalisation and different forms, NFC, NFD, NFKC, NFKD
@@ -14,48 +14,35 @@ from typing import NamedTuple
 MAX_BOUNDARY_RETRACT = 8
 
 _WS_RE = re.compile(r"\s+")
-# Moses-style detokenisation artifacts: " ." -> ".", "( " -> "(", etc. SeqXGPT's
-# PubMed/arXiv documents arrive in this form; XSum/CNN ones do not.
+# moses style spacing: " ." -> ".", "( " -> "(" etc. seqxgpt pubmed/arxiv docs have it,
+# xsum/cnn dont
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([,.;:!?%)\]}])")
 _SPACE_AFTER_OPEN_RE = re.compile(r"([(\[{])\s+")
 _SPACED_HYPHEN_RE = re.compile(r"(?<=\w) - (?=\w)")
 
 
 class CompositionStraddlesBoundary(ValueError):
-    """A boundary offset cannot be carried through NFC without corrupting it."""
+    """boundary offset cant be carried through NFC safely"""
 
     # Raised by nfc_split when no safe cut point exists nearby, makes life easier to debug
 
 
 class NfcSplit(NamedTuple):
-    """Result of carrying a pre-NFC offset through normalisation."""
-
-    text: str
-    """The NFC-normalised string. Guaranteed equal to `nfc(original)`."""
-
-    cut: int
-    """Boundary offset into :attr:`text`. Marks the same logical position."""
-
-    retract: int
-    """How far the pre-NFC cut moved to reach a safe boundary (<= 0)."""
-
-    nfc_delta: int
-    """Length change NFC applied to the prefix. Negative when NFC composed."""
+    text: str  # == nfc(original)
+    cut: int  # offset into text
+    retract: int  # how far the pre-NFC cut moved back, <= 0
+    nfc_delta: int  # length change of the prefix, negative if NFC composed
 
 
 def nfc(s: str) -> str:
-    """Normalise to NFC"""
     return unicodedata.normalize("NFC", s)
 
 
 def is_nfc(s: str) -> bool:
-    """True if `s` is already NFC-normalised."""
     return unicodedata.is_normalized("NFC", s)
 
 
 def nfc_split(s: str, cut: int) -> NfcSplit:
-    """NFC-normalise `s` while carrying the pre-NFC offset `cut` through."""
-
     # ************* NOTE **************
     # This is tricky... specific to SeqXGPT's prompt_len because its offset into the raw string
     # and NFC can shorten a string. Can't just normalise and reuse the offset
@@ -64,9 +51,8 @@ def nfc_split(s: str, cut: int) -> NfcSplit:
     if not 0 <= cut <= len(s):
         raise ValueError(f"cut {cut} outside [0, {len(s)}]")
 
-    # A combining mark composes leftwards onto the character before it, so a cut
-    # sitting  before one would split a composition sequence. Retract
-    # until the character at the cut is a starter.
+    # combining marks compose onto the char before, so cutting right before one splits
+    # the sequence. retract until the char at the cut is a starter
 
     cut_adj = cut
     while 0 < cut_adj < len(s) and unicodedata.combining(s[cut_adj]) != 0:
@@ -95,36 +81,33 @@ def nfc_split(s: str, cut: int) -> NfcSplit:
 
 
 def collapse_ws(s: str) -> str:
-    """Collapse every whitespace run to a single space and strip the ends."""
     return _WS_RE.sub(" ", s).strip()
 
 
 def strip_moses_spacing(s: str) -> str:
-    """Undo Moses-style detokenisation spacing: `"disease ."` -> `"disease."`"""
+    # "disease ." -> "disease."
     s = _SPACED_HYPHEN_RE.sub("-", s)
     s = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", s)
     return _SPACE_AFTER_OPEN_RE.sub(r"\1", s)
 
 
 def text_key(s: str) -> str:
-    """Aggressive normalisation for duplicate detection across corpora."""
+    # aggressive, for dedup across corpora
     return collapse_ws(strip_moses_spacing(nfc(s).casefold()))
 
 
 def content_key(s: str, n_chars: int) -> str:
-    """Prefix key used to recover SeqXGPT base documents"""
-
+    """prefix key used to recover seqxgpt base docs"""
     # NOTE: n char: Measured cross-file recovery on SeqXGPT-Bench: ~98% at 30, ~97.5% at 40,
     # ~96% at 60, ~83% at 120.
 
     if n_chars <= 0:
+        # debug for weird error during dev
         raise ValueError(f"n_chars must be positive, got {n_chars}")
     return collapse_ws(nfc(s).casefold())[:n_chars]
 
 
 def stable_hash(s: str, n: int = 16) -> str:
-    """Process-stable hex digest. Use this, never the builtin `hash()`."""
-
     # ************* NOTE **************
     # Do not use the built in hash bc/ hash will change across runs & processes, if we need to
     # modify / rerun some things it will be a nightmare to track down what changed.
@@ -134,7 +117,7 @@ def stable_hash(s: str, n: int = 16) -> str:
     return hashlib.blake2b(s.encode("utf-8"), digest_size=16).hexdigest()[:n]
 
 
-# Cyrillic and Greek lookalikes of Latin letters: the set RAID's homoglyph attack substitutes.
+# cyrillic/greek lookalikes that RAIDs homoglyph attack swaps in
 _HOMOGLYPH_TABLE = str.maketrans(
     "\u0430\u0435\u0456\u043e\u0441\u0440\u0443\u0445"  # Cyrillic lowercase
     "\u0410\u0412\u0415\u041a\u041c\u041d"
@@ -147,7 +130,7 @@ _SPACE_RUN_RE = re.compile(r"[^\S\n]{2,}")
 
 
 def defang(s: str) -> str:
-    """Undo character-level evasion: drop format characters (zero-width spaces and the like),
-    fold Latin homoglyphs, and collapse runs of horizontal whitespace. Newlines are kept."""
+    """Undo char level attacks: drop zero width etc, fold homoglyphs, squash spaces."""
+    # newlines are kept
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Cf")
     return _SPACE_RUN_RE.sub(" ", s.translate(_HOMOGLYPH_TABLE))

@@ -1,17 +1,4 @@
-"""Ingest: the JSONL writer and its integrity gate.
-
-The interesting failures here are not crashes. A pass that writes 400k
-documents in the wrong order, or loses a batch's segmentation counters, or
-leaves a truncated file that the next step reads as a complete corpus, all look
-like success. So the assertions are about identity and accounting: same bytes
-whatever the worker count, counters that sum to the row count, and nothing at
-the output path unless the pass finished.
-
-Everything here runs with `workers=1`, which takes the in-process path. That
-is not only for speed: a tokenizer monkeypatched in the parent cannot reach a
-spawned child, so a pooled test would silently need the network. The one test
-that exercises real workers is marked network for that reason.
-"""
+# workers=1 everywhere since the patched tokenizer doesnt reach spawned workers
 
 import csv
 import json
@@ -50,7 +37,6 @@ def write_mage(directory: Path, split: str, rows: Sequence[tuple[str, str, str]]
 
 
 def mage_rows(n: int) -> list[tuple[str, str, str]]:
-    """Alternating human and machine rows, each with distinct text."""
     out: list[tuple[str, str, str]] = []
     for i in range(n):
         if i % 2:
@@ -65,25 +51,15 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def run_mage(directory: Path, out: Path, **kwargs: Any) -> IngestResult:
-    """Ingest only the splits a fixture actually wrote.
-
-    `ingest_mage` defaults to all five MAGE files, which is right in
-    production and wrong for a fixture holding one.
-    """
+    # default is all 5 mage files, fixtures only write one
     kwargs.setdefault("splits", ["test"])
     kwargs.setdefault("workers", 1)
     return ingest_mage(directory, out, **kwargs)
 
 
-# --------------------------------------------------------------------------- #
-# Gates
-# --------------------------------------------------------------------------- #
-
-
 def test_an_adversarial_row_stops_raid_before_any_segmentation(
     tmp_path: Path, word_tokenizer: None
 ) -> None:
-    """Six seconds of metadata scanning against an hour of wasted segmentation."""
     write_clean(
         tmp_path / "clean.parquet",
         [clean_row(id="h", model="human"), clean_row(id="x", model="gpt4", attack="homoglyph")],
@@ -109,7 +85,7 @@ def test_an_unparsed_src_stops_mage_before_any_segmentation(
 def test_the_integrity_gate_can_be_skipped_for_one_split(
     tmp_path: Path, word_tokenizer: None
 ) -> None:
-    """A single-file pass legitimately fails the both-classes polarity canary."""
+    # one split only has one class so the polarity check would fail anyway
     write_mage(tmp_path, "ood_gpt_para", [(HUMAN_TEXT, MACHINE_LABEL, "cnn_human_para")])
 
     result = run_mage(
@@ -122,11 +98,6 @@ def test_the_integrity_gate_can_be_skipped_for_one_split(
 
     assert result.docs == 1
     assert not result.is_green, "one-class pass is recorded as not green"
-
-
-# --------------------------------------------------------------------------- #
-# Output
-# --------------------------------------------------------------------------- #
 
 
 def test_raid_jsonl_is_ordered_validated_and_labelled(tmp_path: Path, word_tokenizer: None) -> None:
@@ -167,7 +138,6 @@ def test_mage_jsonl_spans_splits_in_file_order(tmp_path: Path, word_tokenizer: N
 
 
 def test_seqxgpt_ingest_keeps_its_sentence_labels(tmp_path: Path, word_tokenizer: None) -> None:
-    """SeqXGPT is the only corpus whose spans carry labels, and ingest must not drop them."""
     write_records(tmp_path, "en_gpt2_lines", [row(MIXED, "gpt2", len(HUMAN_SENT))])
 
     result = ingest_seqxgpt(tmp_path, tmp_path / "out")
@@ -179,7 +149,6 @@ def test_seqxgpt_ingest_keeps_its_sentence_labels(tmp_path: Path, word_tokenizer
 
 
 def test_every_written_line_is_a_valid_document(tmp_path: Path, word_tokenizer: None) -> None:
-    """The output is only useful if it reloads, so the writer is checked by reloading."""
     write_mage(tmp_path, "test", mage_rows(12))
 
     result = run_mage(tmp_path, tmp_path / "out", workers=1, batch_size=5)
@@ -192,7 +161,6 @@ def test_every_written_line_is_a_valid_document(tmp_path: Path, word_tokenizer: 
 
 
 def test_empty_rows_are_dropped_but_still_accounted(tmp_path: Path, word_tokenizer: None) -> None:
-    """`docs + empty_text == rows` is what makes a short file provably complete."""
     write_clean(
         tmp_path / "clean.parquet",
         [
@@ -211,7 +179,6 @@ def test_empty_rows_are_dropped_but_still_accounted(tmp_path: Path, word_tokeniz
 
 
 def test_a_batch_boundary_does_not_change_the_output(tmp_path: Path, word_tokenizer: None) -> None:
-    """Batching is an implementation detail and must not be observable."""
     write_mage(tmp_path, "test", mage_rows(9))
 
     outputs = []
@@ -225,7 +192,6 @@ def test_a_batch_boundary_does_not_change_the_output(tmp_path: Path, word_tokeni
 
 
 def test_segment_counters_are_summed_across_batches(tmp_path: Path, word_tokenizer: None) -> None:
-    """Each task returns its own delta, so a lost merge would undercount silently."""
     write_mage(tmp_path, "test", mage_rows(8))
 
     one = run_mage(tmp_path, tmp_path / "a", batch_size=8)
@@ -234,11 +200,10 @@ def test_segment_counters_are_summed_across_batches(tmp_path: Path, word_tokeniz
     assert one.segment_stats == many.segment_stats
     assert one.segment_stats["docs"] == 8
     assert one.segment_stats["spans"] > 8
-    assert sum(one.adapter_stats["styles"].values()) == 8
+    assert one.adapter_stats["docs"] == 8
 
 
 def test_merging_segment_stats_covers_every_field() -> None:
-    """A new SegmentStats field must not be silently left out of the merge."""
     total, delta = SegmentStats(), SegmentStats()
     for i, name in enumerate(SegmentStats.model_fields, start=1):
         setattr(total, name, i)
@@ -250,20 +215,10 @@ def test_merging_segment_stats_covers_every_field() -> None:
         assert getattr(total, name) == i * 11, name
 
 
-# --------------------------------------------------------------------------- #
-# Crash safety and the sidecar
-# --------------------------------------------------------------------------- #
-
-
 def test_a_failed_pass_leaves_nothing_at_the_output_path(
     tmp_path: Path, word_tokenizer: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A 76-minute pass that dies must not leave a file verify would trust.
-
-    The partial file is deliberately left behind for inspection; what matters is
-    that it is not named `*.jsonl`, because that is the glob everything
-    downstream reads.
-    """
+    # .partial is left around on purpose, just not as *.jsonl
     write_mage(tmp_path, "test", mage_rows(6))
 
     def explode(batch: Any) -> Any:
@@ -296,19 +251,9 @@ def test_the_sidecar_records_what_the_report_needs(tmp_path: Path, word_tokenize
     assert isinstance(payload["path"], str), "Path must serialise for JSON"
 
 
-# --------------------------------------------------------------------------- #
-# The real pool
-# --------------------------------------------------------------------------- #
-
-
 @pytest.mark.network
 def test_workers_do_not_change_the_bytes(tmp_path: Path) -> None:
-    """The claim the whole module rests on: parallelism is not observable.
-
-    Marked network because spawned workers load the real tokenizer -- a
-    fixture patched in this process cannot reach them, which is also why every
-    other test here runs in-process.
-    """
+    # needs network, spawned workers load the real tokenizer
     write_mage(tmp_path, "test", mage_rows(300))
 
     serial = run_mage(tmp_path, tmp_path / "serial", batch_size=32)
@@ -320,14 +265,7 @@ def test_workers_do_not_change_the_bytes(tmp_path: Path) -> None:
     assert serial.adapter_stats == parallel.adapter_stats
 
 
-# --------------------------------------------------------------------------- #
-# Surviving a task that never returns
-# --------------------------------------------------------------------------- #
-
-
 class _StubHandle:
-    """An `apply_async` handle that either returns or hangs, on demand."""
-
     def __init__(self, batch: Any, hang_ids: set[str]) -> None:
         self.batch = batch
         self.hangs = any(getattr(r, "id", None) in hang_ids for r in batch.rows)
@@ -335,7 +273,7 @@ class _StubHandle:
     def get(self, timeout: float | None = None) -> Any:
         if self.hangs:
             raise multiprocessing.TimeoutError
-        return ingest._Result([b'{"stub": 1}\n'] * len(self.batch.rows), SegmentStats(), {})
+        return ingest._Result([b'{"stub": 1}\n'] * len(self.batch.rows), SegmentStats())
 
 
 class _StubPool:
@@ -362,7 +300,6 @@ def raid_rows(ids: Sequence[str]) -> list[Any]:
 def stub_runner(
     monkeypatch: pytest.MonkeyPatch, hang_ids: set[str]
 ) -> tuple[Any, list[str], list[_StubPool]]:
-    """A _PoolRunner whose pools are stubs, so a hang is deterministic."""
     runner = ingest._PoolRunner(workers=2, task_timeout=0.01)
     submitted: list[str] = []
     pools: list[_StubPool] = []
@@ -380,13 +317,8 @@ def stub_runner(
 def test_a_hung_task_is_isolated_and_the_rest_still_run(
     monkeypatch: pytest.MonkeyPatch, word_tokenizer: None
 ) -> None:
-    """One pathological document must not cost the batch it happens to share.
-
-    A regex holds the GIL, so the worker cannot be interrupted -- the pool has
-    to be terminated, which kills every task queued behind the culprit too.
-    Those get resubmitted, the offending batch is retried one document at a
-    time, and only the document that actually hangs skips pysbd.
-    """
+    # hung regex holds the gil so the pool gets killed, then the bad batch is redone
+    # one doc at a time and only the hanging doc skips pysbd
     window = [
         ingest._Batch("raid", raid_rows(["a1", "a2"])),
         ingest._Batch("raid", raid_rows(["b1", "BAD", "b3"])),
@@ -400,10 +332,8 @@ def test_a_hung_task_is_isolated_and_the_rest_still_run(
     assert runner.forced_fallback_docs == ["BAD"], "only the culprit falls back"
     assert pools[0].terminated, "a poisoned pool must not be reused"
     assert len(pools) > 1, "the pool is rebuilt to finish the window"
-    # The whole window is submitted up front, so anything queued behind the
-    # culprit dies with the terminated pool and is redone -- at the window level
-    # ("c1,c2") and again inside the isolation pass ("b3"). That repeated work
-    # is the cost of a hang, and it is bounded by the window size.
+    # stuff queued after the bad batch gets redone, c1,c2 at window level and b3 again
+    # in the one-by-one pass
     assert submitted == [
         "a1,a2",
         "b1,BAD,b3",
@@ -414,14 +344,14 @@ def test_a_hung_task_is_isolated_and_the_rest_still_run(
         "b3",
         "c1,c2",
     ]
-    # Four healthy stub batches plus the one real fallback document.
+    # 4 stub batches + the fallback doc
     assert sum(len(r.lines) for r in results) == 2 + 1 + 1 + 1 + 2
 
 
 def test_two_hung_documents_in_one_window_both_resolve(
     monkeypatch: pytest.MonkeyPatch, word_tokenizer: None
 ) -> None:
-    """RAID has two of these, and they could land in the same window."""
+    # raid has 2 docs that hang like this
     window = [
         ingest._Batch("raid", raid_rows(["BAD1", "x"])),
         ingest._Batch("raid", raid_rows(["y", "BAD2"])),
@@ -435,7 +365,6 @@ def test_two_hung_documents_in_one_window_both_resolve(
 
 
 def test_the_forced_fallback_produces_valid_documents(word_tokenizer: None) -> None:
-    """The fallback is what actually ships for a pathological document."""
     batch = ingest._Batch("raid", raid_rows(["only"]))
 
     result = ingest._task(batch, use_pysbd=False)
@@ -450,11 +379,10 @@ def test_the_forced_fallback_produces_valid_documents(word_tokenizer: None) -> N
 
 
 def test_a_fallback_segmenter_never_calls_pysbd() -> None:
-    """Belt and braces: the flag, not the input, decides."""
     from aivhuman.text.segment import Segmenter
 
     seg = Segmenter(use_pysbd=False)
-    seg._seg = None  # any pysbd call would now raise AttributeError
+    seg._seg = None  # so any pysbd call blows up
 
     spans = seg.segment("One sentence here. And a second one.\nThird line.")
 

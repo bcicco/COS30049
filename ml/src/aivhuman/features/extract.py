@@ -1,8 +1,7 @@
-"""Compute every feature for a split and write one row per span to parquet."""
+"""feature extraction, one parquet row per span"""
 
-# spaCy's own `n_process` pickles every parsed Doc back to the parent and measured 5x slower
-# than a single process. Workers here parse and reduce to feature arrays themselves, and the
-# CPU work for a chunk runs while the GPU scores the same chunk.
+# spacy n_process pickles every Doc back to the parent, was ~5x slower than 1 proc.
+# so workers parse + compute the arrays themselves, and cpu work overlaps with the gpu
 
 import time
 from collections.abc import Sequence
@@ -17,20 +16,18 @@ import pyarrow.parquet as pq
 from aivhuman.features import FEATURE_NAMES, lexical, lm, syntax
 from aivhuman.features.load import SpanDoc
 
-CHUNK: Final = 10_000
-"""Documents per extraction pass, and per parquet row group."""
+CHUNK: Final = 10_000  # also the parquet row group size
 
 _NLP: Any = None
 
 
 def init_worker() -> None:
-    """Pool initializer: load spaCy once per process."""
     global _NLP
     _NLP = syntax.load()
 
 
 def text_features(job: tuple[str, list[tuple[int, int]]]) -> np.ndarray:
-    """Lexical then syntactic features for one document, `[n_spans, 5 + 13]`."""
+    # lexical then syntax, shape [n_spans, 5 + 13]
     global _NLP
     if _NLP is None:
         init_worker()
@@ -39,7 +36,6 @@ def text_features(job: tuple[str, list[tuple[int, int]]]) -> np.ndarray:
 
 
 def to_table(docs: Sequence[SpanDoc], features: Sequence[np.ndarray]) -> pa.Table:
-    """One row per span, with the document fields needed for vetting and training."""
     n = [len(d.spans) for d in docs]
     stacked = np.vstack(features).astype(np.float32)
     if stacked.shape[1] != len(FEATURE_NAMES):
@@ -54,7 +50,6 @@ def to_table(docs: Sequence[SpanDoc], features: Sequence[np.ndarray]) -> pa.Tabl
         "label": pa.array(per_span([d.label for d in docs]), pa.int8()),
         "domain": per_span([d.domain for d in docs]),
         "breakdown": per_span([d.breakdown for d in docs]),
-        "detok_style": per_span([d.detok_style for d in docs]),
         "span_label": pa.array(
             [
                 lab
@@ -77,11 +72,7 @@ def extract(
     pool: Pool | None = None,
     chunk: int = CHUNK,
 ) -> int:
-    """Write the feature file for `docs`. Returns the number of span rows written.
-
-    With a pool (built with `init_worker`), text features run in the workers; without one,
-    in this process.
-    """
+    """Write features for docs, returns n span rows. pool must use init_worker"""
     if not docs:
         raise ValueError(f"no documents for {path.stem}")
     path.parent.mkdir(parents=True, exist_ok=True)

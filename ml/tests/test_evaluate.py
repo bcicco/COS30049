@@ -1,5 +1,3 @@
-"""Evaluation harness metrics and prediction round-trip."""
-
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +6,7 @@ import pytest
 pytest.importorskip("sklearn")
 
 from aivhuman.evaluate import (
+    COMMENTARY,
     EvalDoc,
     bootstrap_ci,
     compute_metrics,
@@ -31,8 +30,7 @@ def _doc(i: int, label: int, breakdown: str) -> EvalDoc:
 
 
 def test_tpr_at_fpr_respects_the_fpr_budget() -> None:
-    # 100 negatives at 0..0.99, positives at 0.995 and 0.5: at 1% FPR the threshold must sit
-    # above the highest negative, so only the first positive is caught.
+    # threshold has to sit above the top negative (0.99) so only the 0.995 one gets caught
     labels = np.array([0] * 100 + [1, 1])
     scores = np.concatenate([np.arange(100) / 100, [0.995, 0.5]])
     tpr, threshold = tpr_at_fpr(labels, scores, 0.01)
@@ -88,8 +86,7 @@ def test_bootstrap_ci_brackets_the_estimate_and_resamples_groups() -> None:
     groups = np.arange(800) // 2
     ((lo, hi),) = bootstrap_ci(labels, scores, groups, [partial_auroc], n=100)
     assert lo < partial_auroc(labels, scores) < hi
-    # With identical scores inside each two-document group, whole-group resampling keeps
-    # every group's pair together, so doubling each group changes nothing.
+    # resampling is by group so duplicating every row shouldnt change the ci
     doubled = bootstrap_ci(
         np.repeat(labels, 2), np.repeat(scores, 2), np.repeat(groups, 2), [partial_auroc], n=100
     )
@@ -113,7 +110,7 @@ def test_compute_metrics_breaks_down_by_generator_at_01pct() -> None:
     docs = [_doc(i, 0, "human") for i in range(2000)]
     docs += [_doc(10_000 + i, 1, "gpt2") for i in range(50)]
     docs += [_doc(20_000 + i, 1, "gpt4") for i in range(50)]
-    # Humans spread over [0, 0.5); gpt4 sits between the 1% and 0.1% thresholds.
+    # humans in [0, 0.5), gpt4 lands between the 1% and 0.1% thresholds
     preds = {d.doc_id: i / 4000 for i, d in enumerate(docs[:2000])}
     preds |= {d.doc_id: 0.9 for d in docs if d.breakdown == "gpt2"}
     preds |= {d.doc_id: 0.497 for d in docs if d.breakdown == "gpt4"}
@@ -135,3 +132,9 @@ def test_drop_commentary_removes_only_paraphrased_commentary() -> None:
     kept, dropped = drop_commentary(docs)
     assert dropped == 1
     assert [d.doc_id for d in kept] == ["raid:1", "raid:2"]
+
+
+def test_commentary_catches_the_paraphraser_refusing() -> None:
+    assert COMMENTARY.search("Sorry, I cannot paraphrase that sentence.")
+    assert COMMENTARY.search("A rephrased statement for this could be")
+    assert not COMMENTARY.search("The committee met on Tuesday to discuss the budget.")

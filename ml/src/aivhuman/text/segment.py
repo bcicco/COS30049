@@ -1,8 +1,6 @@
-"""Sentence segmentation into character offsets."""
+"""sentence segmentation to char offsets"""
 
-# ***************** IMPORTANT ******************
-# clean = False is MANDATORY (prevent rewrite)
-# char_span = True is MANDATORY (return offsets, not strings)
+# NOTE: need clean=False (else pysbd rewrites the text) and char_span=True (gives offsets)
 
 import re
 import warnings
@@ -25,8 +23,8 @@ with warnings.catch_warnings():
 
 _WORD_RE = re.compile(r"\S+")
 
-# ***************** IMPORTANT ******************
-# THIS WAS FROM A RUN IN TESTING, SUCH A HEADACHE TO RESOLVE, CAN SKIP IF YOU WANT
+# ***************** NOTE ******************
+# this was from a run in testing, such a headache to resolve, can skip if you want
 # pysbd hangs on one specific case , and a RAID document
 # contains it.TLDR; process stuck for 8 mins on a big abstract.
 # faulthandler put the stack in processor.replace_periods_before_numeric_references
@@ -50,14 +48,13 @@ _WORD_RE = re.compile(r"\S+")
 # a small quality loss we can live with :))))
 _NUMERIC_REF_DANGER = re.compile(r"[.!?]\s*\[\s*(?:\d{1,4}[\s,;-]+){6,}")
 
-# Fallback boundaries: after a sentence terminator, or at a newline. pysbd
-# splits on bare newlines too, so this is the same rule minus the abbreviation
-# handling that is the only thing being given up.
+# fallback: split after . ! ? or at newlines. pysbd splits on newlines too so we only
+# lose the abbreviation handling
 _FALLBACK_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
 def n_words(s: str) -> int:
-    """Whitespace-delimited token count. Tokenizer-independent sanity check."""
+    # tokenizer independent, just for sanity checks
     return len(_WORD_RE.findall(s))
 
 
@@ -85,19 +82,15 @@ class SegmentStats(BaseModel):
 
     @property
     def anchor_failure_rate(self) -> float:
-        """Share of spans whose PySBD offsets could not be verified."""
-
-        # quality, not correctness.
+        # share of spans where pysbd offsets couldnt be verified, quality metric only
         return round(self.failed / self.spans, 6) if self.spans else 0.0
 
     @property
     def is_healthy(self) -> bool:
-        """Whether the run met its correctness bar."""
         # health check
         return self.nonws_gap_chars == 0
 
     def as_dict(self) -> dict[str, Any]:
-        """Report-facing dict of the raw counters for postmortem and sanity checks."""
         return self.model_dump()
 
 
@@ -109,8 +102,7 @@ class Segmenter(BaseModel):
     language: str = "en"
     stats: SegmentStats = Field(default_factory=SegmentStats)
 
-    use_pysbd: bool = True
-    """When false, split by regex only."""
+    use_pysbd: bool = True  # False = regex split only
 
     # private bc nothing. to val, its machinery
     _seg: Any = PrivateAttr(default=None)
@@ -118,7 +110,6 @@ class Segmenter(BaseModel):
     @field_validator("language")
     @classmethod
     def _known_language(cls, value: str) -> str:
-        """Reject an unsupported language up front."""
         if value not in LANGUAGE_CODES:
             raise ValueError(
                 f"pysbd has no segmenter for {value!r}; "
@@ -132,7 +123,6 @@ class Segmenter(BaseModel):
             self._seg = pysbd.Segmenter(language=self.language, clean=False, char_span=True)
 
     def segment(self, text: str) -> list[tuple[int, int]]:
-        """Return ordered, non-overlapping `(start, end)` pairs."""
         self.stats.docs += 1
         if not text.strip():
             self.stats.empty_docs += 1
@@ -140,11 +130,9 @@ class Segmenter(BaseModel):
 
         spans = self._enforce_monotonic(self._collect(text, 0, len(text)))
         spans = self._fill_gaps(text, spans)
-        # Coverage is a post-condition, not an emergent property of the passes
-        # IMPORTANT: NOT SURE HOW WELL _FILL_GAPS WORKS
-
-        # above. _fill_gaps recovers what it can *as sentences*; this guarantees
-        # nothing is left behind regardless of how PySBD behaved.
+        # not sure how well _fill_gaps works tbh
+        # _fill_gaps gets back what it can as sentences, _close_gaps makes sure nothing
+        # is left out whatever pysbd did
         spans = self._close_gaps(text, spans)
         self._account_gaps(text, spans)
 
@@ -154,7 +142,7 @@ class Segmenter(BaseModel):
         return spans
 
     def _collect(self, text: str, offset: int, end_limit: int) -> list[tuple[int, int]]:
-        """Segment text[offset:end_limit], avoiding pysbd where it would hang."""
+        # skip pysbd where it would hang
         if not self.use_pysbd:
             return self._fallback_split(text, offset, end_limit)
         if _NUMERIC_REF_DANGER.search(text, offset, end_limit):
@@ -163,7 +151,6 @@ class Segmenter(BaseModel):
         return self._segment_chunk(text, offset, end_limit)
 
     def _fallback_split(self, text: str, offset: int, end_limit: int) -> list[tuple[int, int]]:
-        """Split without pysbd, for the chunks pysbd cannot survive."""
         spans: list[tuple[int, int]] = []
         start = offset
         for match in _FALLBACK_BOUNDARY_RE.finditer(text, offset, end_limit):
@@ -177,7 +164,6 @@ class Segmenter(BaseModel):
         return spans
 
     def _segment_chunk(self, text: str, offset: int, end_limit: int) -> list[tuple[int, int]]:
-        """Run PySBD over one window and return absolute spans."""
         chunk = text[offset:end_limit]
         raw = self._seg.segment(chunk)
         spans: list[tuple[int, int]] = []
@@ -216,9 +202,8 @@ class Segmenter(BaseModel):
         cursor = 0
         for start, end in [*spans, (len(text), len(text))]:
             if text[cursor:start].strip():
-                # Recovered spans are clipped to the gap, so monotonicity holds
-                # by construction and no second enforcement pass is needed
-                # one was previously dropping the very spans added here.
+                # clipped to the gap so its still monotonic, dont run
+                # _enforce_monotonic again here (it drops these spans)
                 recovered = [
                     (a, b)
                     for a, b in self._collect(text, cursor, start)
@@ -233,8 +218,7 @@ class Segmenter(BaseModel):
         return filled
 
     def _close_gaps(self, text: str, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
-        """Normalise to a guaranteed partition: ordered, disjoint, fully covering."""
-
+        """Force an ordered, disjoint, fully covering partition."""
         # The single top man #1 MVP authoritative pass. The only one whose output the rest of
         # the pipeline trusts. KEEP IN MIND --> upstream = best-effort
 
@@ -255,7 +239,6 @@ class Segmenter(BaseModel):
         return closed
 
     def _anchor(self, text: str, ts: object, cursor: int) -> tuple[int, int] | tuple[None, None]:
-        """Verify PySBD's offsets, re-anchoring them if they do not round-trip."""
         sent: str = ts.sent  # type: ignore[attr-defined]
         start: int = ts.start  # type: ignore[attr-defined]
         end: int = ts.end  # type: ignore[attr-defined]
@@ -263,8 +246,8 @@ class Segmenter(BaseModel):
         if text[start:end] == sent:
             return start, end
 
-        # Re-anchor with a cursor that only ever advances, so repeated sentences
-        # map to successive occurrences rather than all to the first.
+        # cursor only moves forward so repeated sentences hit the next occurrence
+        # instead of all mapping to the 1st one
         found = text.find(sent, cursor)
         if found >= 0:
             self.stats.repaired += 1
@@ -274,7 +257,7 @@ class Segmenter(BaseModel):
         return None, None
 
     def _enforce_monotonic(self, spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
-        """Drop any span that overlaps its predecessor. Should never fire."""
+        # drop overlaps with the previous span, should never happen
         out: list[tuple[int, int]] = []
         prev_end = 0
         for start, end in spans:
@@ -294,7 +277,7 @@ class Segmenter(BaseModel):
 
 
 def _trim(text: str, start: int, end: int) -> tuple[int, int] | None:
-    """Shrink a span past surrounding whitespace. PySBD keeps the trailing space."""
+    # pysbd keeps the trailing space
     while start < end and text[start].isspace():
         start += 1
     while end > start and text[end - 1].isspace():

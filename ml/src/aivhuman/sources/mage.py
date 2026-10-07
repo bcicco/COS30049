@@ -1,4 +1,4 @@
-"""MAGE: the cross-corpus generalisation set."""
+"""MAGE, cross corpus test set"""
 
 import csv
 from collections.abc import Iterator, Sequence
@@ -13,14 +13,13 @@ from aivhuman.labels import mage_label, parse_src
 from aivhuman.schema import LABEL_HUMAN, Doc, SentenceSpan
 from aivhuman.text.normalize import nfc
 from aivhuman.text.segment import Segmenter, n_words
-from aivhuman.text.style import detect_style
 from aivhuman.text.tokens import count_tokens
 
 COLUMNS: Final = ["text", "label", "src"]
 
 # *** NOTE ****
-# Rows exceed the 128 KB default. Not `sys.maxsize`: on Windows that raises
-# OverflowError, might be a problem on diff. OS
+# rows go over the 128 KB default. sys.maxsize raises OverflowError on windows,
+# might be a problem on diff. OS
 _FIELD_SIZE_LIMIT: Final = 2**31 - 1
 
 
@@ -40,8 +39,6 @@ UNPARSED: Final = "<unparsed>"
 
 
 class RawRow(BaseModel):
-    """One CSV row"""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     split: str
@@ -53,8 +50,6 @@ class RawRow(BaseModel):
 
 
 class MageStats(BaseModel):
-    """Structural measurements to keep track of integrity"""
-
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     rows: NonNegativeInt = 0
@@ -70,7 +65,6 @@ class MageStats(BaseModel):
     by_split: dict[str, int] = Field(default_factory=dict)
     by_domain: dict[str, int] = Field(default_factory=dict)
     by_generator: dict[str, int] = Field(default_factory=dict)
-    styles: dict[str, int] = Field(default_factory=dict)
 
     @property
     def human_frac(self) -> float:
@@ -106,12 +100,10 @@ class MageStats(BaseModel):
             "by_split": dict(sorted(self.by_split.items())),
             "by_domain": dict(sorted(self.by_domain.items())),
             "by_generator": dict(sorted(self.by_generator.items())),
-            "styles": dict(sorted(self.styles.items())),
         }
 
 
 def load_rows(path: Path, split: str) -> Iterator[RawRow]:
-    """Stream one MAGE CSV."""
     csv.field_size_limit(_FIELD_SIZE_LIMIT)
     with path.open(encoding=MAGE_ENCODING, newline="") as fh:
         reader = csv.DictReader(fh)
@@ -128,7 +120,6 @@ def load_rows(path: Path, split: str) -> Iterator[RawRow]:
 
 
 def iter_rows(directory: Path, splits: Sequence[str] | None = None) -> Iterator[RawRow]:
-    """Stream every requested split in file order."""
     for split in splits if splits is not None else list(MAGE_FILES):
         yield from load_rows(directory / MAGE_FILES[split], split)
 
@@ -140,7 +131,6 @@ def build_docs(
     segmenter: Segmenter | None = None,
     stats: MageStats | None = None,
 ) -> Iterator[Doc]:
-    """Normalise MAGE's CSVs doc objects, in file order."""
     seg = segmenter or Segmenter()
     st = stats if stats is not None else MageStats()
 
@@ -148,7 +138,7 @@ def build_docs(
         account(row, st)
         doc = to_doc(row, seg)
         if doc is not None:
-            count_doc(doc, st)
+            st.docs += 1
             yield doc
 
 
@@ -158,22 +148,13 @@ def scan(
     splits: Sequence[str] | None = None,
     stats: MageStats | None = None,
 ) -> MageStats:
-    """Populate counters that do not require segmenting the text."""
     st = stats if stats is not None else MageStats()
     for row in iter_rows(directory, splits):
         account(row, st)
     return st
 
 
-def count_doc(doc: Doc, st: MageStats) -> None:
-    """Record the counters that only a built document can supply."""
-    st.docs += 1
-    style = str(doc.meta["detok_style"])
-    st.styles[style] = st.styles.get(style, 0) + 1
-
-
 def account(row: RawRow, st: MageStats) -> None:
-    """Every counter that reads the row rather than the segmented text."""
     st.rows += 1
     st.by_split[row.split] = st.by_split.get(row.split, 0) + 1
 
@@ -186,7 +167,7 @@ def account(row: RawRow, st: MageStats) -> None:
     parsed = parse_src(row.src)
     domain, generator = (parsed.domain, parsed.generator) if parsed.ok else (None, None)
     if not parsed.ok:
-        # Counted, not raised, and the row is still emitted
+        # just count it, row still gets emitted
         st.unparsed_src += 1
         if (
             # for debug, we can probably remove if wanna
@@ -209,13 +190,12 @@ def account(row: RawRow, st: MageStats) -> None:
     st.by_generator[generator_key] = st.by_generator.get(generator_key, 0) + 1
 
     if not nfc(row.text).strip():
-        # A document with no sentences carries no instances, so MIL has nothing
-        # to pool. Dropped rather than emitted as an empty bag.
+        # no sentences = nothing for MIL to pool, so these get dropped
         st.empty_text += 1
 
 
 def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
-    """Build one document. Pure, so it can run in a worker process."""
+    # pure so it can run in a worker
     label = mage_label(row.label)
     parsed = parse_src(row.src)
     domain, generator = (parsed.domain, parsed.generator) if parsed.ok else (None, None)
@@ -226,7 +206,6 @@ def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
 
     spans = seg.segment(text)
     _doc_tokens, per_span = count_tokens(text, spans)
-    style = detect_style(text)
 
     return Doc(
         doc_id=f"mage:{row.split}:{row.row_index:07d}",
@@ -254,8 +233,5 @@ def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
             "strategy": parsed.strategy,
             "is_paraphrased": parsed.is_paraphrased,
             "n_chars": len(text),
-            "detok_style": style.style,
-            "uppercase_ratio": style.uppercase_ratio,
-            "spaced_punct_ratio": style.spaced_punct_ratio,
         },
     )

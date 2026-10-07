@@ -1,9 +1,7 @@
-"""Group ids that keep related documents on the same side of a split.
+"""group ids so related docs land on the same side of a split
 
-- RAID: `source_id` identifies the human original.
-- MAGE: no source identifier exists, so each document is its own group.
-- SeqXGPT: no base-document field exists; groups are recovered from shared
-  human prefixes (prompts)
+RAID has source_id, MAGE has nothing so every doc is its own group, SeqXGPT
+groups get recovered from the shared human prefix (prompt)
 """
 
 from collections import Counter, defaultdict
@@ -14,35 +12,28 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from aivhuman.text.normalize import content_key, stable_hash, text_key
 
-# Maximum prefix length used as a grouping key. Fixed-length keys either
-# fuse distinct documents that share  short keys or run
-# past long keys, so each key uses as much of the
-# record's human prefix as exists, up to this cap.
+# max prefix len for the grouping key. fixed len keys either merge diff docs w/
+# short keys or run past the prefix, so use as much human prefix as there is up to this
 PREFIX_CHARS: Final = 200
 
-# Measured with fixed-length keys. 40 chars gives 99.3% recovery but 224
-# same-file collisions; 120 chars gives 20 collisions but 93% recovery.
+# w/ fixed len keys: 40 chars -> 99.3% recovery but 224 same-file collisions,
+# 120 chars -> 20 collisions but only 93% recovery
 
-# Minimum key length... shorter keys are too generic to identify a document.
+# shorter keys are too generic to id a doc
 MIN_PREFIX_CHARS: Final = 16
 
-# Minimum shared prefix length required to link two keys.
 MIN_LINK_CHARS: Final = 24
 
 
 def raid_group_id(source_id: str) -> str:
-    """Group RAID rows by their human source document."""
     return f"raid:{source_id}"
 
 
 def mage_group_id(text: str) -> str:
-    """Return a per-document group id for MAGE, derived from a content hash."""
     return f"mage:{stable_hash(text_key(text))}"
 
 
 class GroupStats(BaseModel):
-    """Quality metrics for SeqXGPT group recovery."""
-
     model_config = ConfigDict(extra="forbid")
 
     n_records: int = 0
@@ -75,18 +66,11 @@ class GroupStats(BaseModel):
 
     @property
     def is_green(self) -> bool:
-        """Whether recovery meets the acceptance bar.
-
-        Requires >=95% multi-file recovery and a same-file collision rate of at
-        most 0.1%. The collision bar is a rate rather than zero because SeqXGPT
-        contains a small number of genuine duplicate base documents based on exploration.
-        """
+        # collision bar isnt 0 bc SeqXGPT has a few real duplicate base docs (saw in exploration)
         return self.multi_file_frac >= 0.95 and self.collision_rate <= 0.001
 
 
 class GroupAssignment(BaseModel):
-    """Per-record group ids in input order, with recovery stats."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     group_ids: list[str]
@@ -98,20 +82,17 @@ def recover_seqxgpt_groups(
     prefix_chars: int = PREFIX_CHARS,
     min_link_chars: int = MIN_LINK_CHARS,
 ) -> GroupAssignment:
-    """Recover the base document each SeqXGPT record derives from."""
     # ************* IMPORTANT *************************************
-    # `records` is `[(file_stem, text, prompt_len), ...]`; `prompt_len` is
-    # `None` for fully human records.
+    # records is [(file_stem, text, prompt_len), ...], prompt_len is None for fully human ones
 
-    # SeqXGPT records carry no identifier --> row indices are not aligned across
-    # files AND `prompt_len` varies by generator for the same base.
+    # SeqXGPT records have no id --> row indices dont line up across
+    # files AND prompt_len changes by generator for the same base.
 
     n = len(records)
     stats = GroupStats(n_records=n, prefix_chars=prefix_chars)
     if n == 0:
         return GroupAssignment(group_ids=[], stats=stats)
 
-    # Key each record on as much of its human prefix as it has.
     keys: list[str] = []
     for _stem, text, prompt_len in records:
         budget = len(text) if prompt_len is None else prompt_len
@@ -136,8 +117,8 @@ def recover_seqxgpt_groups(
         parent[rb] = ra
         return True
 
-    # Sorting places each key directly before its extensions the stack tracks
-    # the current chain of prefixes so one pass links them all.
+    # after sorting each key sits right before its extensions, stack holds the
+    # current prefix chain so one pass links everything
     stack: list[str] = []
     for key in unique:
         while stack and not key.startswith(stack[-1]):

@@ -1,1 +1,1 @@
-"""Per-corpus adapters: raw bytes in, normalised :class:`~aivhuman.schema.Doc` out."""
+"""per corpus adapters, raw files -> Doc"""

@@ -1,1 +1,1 @@
-"""Multiple-instance detector over per-sentence features."""
+"""mil detector over per sentence features"""

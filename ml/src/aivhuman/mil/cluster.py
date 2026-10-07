@@ -1,5 +1,3 @@
-"""Unsupervised structure within one class."""
-
 # is k means on the standardised sentence features (machine only)
 # label hidden (but used afterward)  i.e where human sentences land
 # described from where features deviate
@@ -29,22 +27,16 @@ SEED: Final = 0
 
 
 class Cluster(BaseModel):
-    """One cluster: size, composition checks, feature deviations and example sentences."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     index: int
     size: int
-    share: float
-    """Share of machine sentences in this cluster."""
-    human_share: float
-    """Share of human sentences that project onto this centroid; compare with `share`."""
-    mean_prob: float
-    """Mean sigmoid of the MIL sentence logit, i.e. how machine-like the detector finds it."""
+    share: float  # of machine sents
+    human_share: float  # human sents that land on this centroid, compare w/ share
+    mean_prob: float  # mean sigmoid of sentence logit
     generators: dict[str, float]
     domains: dict[str, float]
-    deviations: dict[str, float]
-    """Cluster mean minus machine-class mean, in train standard deviations, all features."""
+    deviations: dict[str, float]  # cluster mean - machine mean, in train sds
     top_features: list[str]
     examples: list[str]
 
@@ -61,7 +53,6 @@ class ClusterReport(BaseModel):
 
 
 def choose_k(z: np.ndarray, rng: np.random.Generator) -> tuple[int, dict[int, float]]:
-    """Fit each k on a sample and pick the best silhouette"""
     fit = z[rng.choice(len(z), min(FIT_SAMPLE, len(z)), replace=False)]
     scores: dict[int, float] = {}
     for k in K_RANGE:
@@ -85,7 +76,7 @@ def _sentence_probs(model: MILModel, z: np.ndarray) -> np.ndarray:
 
 
 def _texts(processed: Path, keys: list[tuple[str, int]]) -> dict[tuple[str, int], str]:
-    """Pull sentence text for (doc_id, span_idx) keys from the source JSONL, one pass per corpus."""
+    # one pass over each corpus jsonl
     wanted: dict[str, set[int]] = {}
     for doc_id, idx in keys:
         wanted.setdefault(doc_id, set()).add(idx)
@@ -93,7 +84,7 @@ def _texts(processed: Path, keys: list[tuple[str, int]]) -> dict[tuple[str, int]
     for source in {d.split(":")[0] for d in wanted}:
         with (processed / f"{source}.jsonl").open(encoding="utf-8") as fh:
             for line in fh:
-                start = line.index('"doc_id":"') + 10  # cheap prefix check before parsing the row
+                start = line.index('"doc_id":"') + 10  # skip parsing rows we dont need
                 doc_id = line[start : line.index('"', start)]
                 if doc_id not in wanted:
                     continue

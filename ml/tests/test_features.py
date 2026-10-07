@@ -1,5 +1,3 @@
-"""Sentence feature extraction: LM windows, span attribution, lexical and syntactic features."""
-
 import re
 from pathlib import Path
 from typing import Any
@@ -21,8 +19,6 @@ VOCAB = 50
 
 
 class WhitespaceTokenizer:
-    """Stands in for the GPT-2 tokenizer: one token per whitespace run, ids by hash."""
-
     bos_token_id = 0
 
     def __call__(self, texts: list[str], **_: Any) -> dict[str, Any]:
@@ -93,7 +89,7 @@ def test_rank_and_top10_agree(tiny_lm: lm.ReferenceLM) -> None:
 
 
 def test_lm_span_features_attribute_by_midpoint() -> None:
-    # Tokens carry their leading space, as GPT-2's do: " b" (3, 5) has midpoint 4, in span 1.
+    # tokens keep the leading space like gpt2, so " b" (3, 5) has midpoint 4 -> span 1
     offsets = [(0, 1), (1, 3), (3, 5), (5, 7)]
     scores = np.array([[-1.0, 0, 1, 1], [-3.0, 0, 1, 1], [-2.0, 1, 0, 2], [-4.0, 1, 0, 2]])
     out = lm.span_features(offsets, scores, [(0, 3), (4, 7), (8, 9)])
@@ -158,7 +154,6 @@ def _span_doc(i: int, text: str, spans: list[tuple[int, int]]) -> SpanDoc:
         span_tokens=[e - s for s, e in spans],
         span_labels=None,
         straddles=[False] * len(spans),
-        detok_style="natural",
     )
 
 

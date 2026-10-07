@@ -1,4 +1,4 @@
-"""Feature files as bags of standardised sentence vectors."""
+"""feature parquet -> bags of sentence vectors"""
 
 from collections.abc import Collection, Iterator, Sequence
 from pathlib import Path
@@ -12,15 +12,12 @@ from pydantic import BaseModel, ConfigDict
 from aivhuman.baselines.encoder import _batches
 from aivhuman.text.normalize import stable_hash
 
-CLIP: Final = 5.0
-"""Standardised values are clipped here, so heavy-tailed features cannot dominate a logit."""
-SENTENCE_VAL_BUCKETS: Final = 5
-"""seqxgpt-calib is split 1:4 into sentence validation and calibration."""
+CLIP: Final = 5.0  # heavy tailed features were blowing up logits
+SENTENCE_VAL_BUCKETS: Final = 5  # seqxgpt-calib split 1:4, sent val vs calibration
 
 
 class Standardizer(BaseModel):
-    """Per-feature mean and standard deviation, fitted on train only."""
-
+    # fit on train only
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     names: list[str]
@@ -37,25 +34,19 @@ class Standardizer(BaseModel):
         )
 
     def transform(self, x: np.ndarray) -> np.ndarray:
-        """Standardise and clip to CLIP; an undefined (NaN) feature becomes the train mean."""
+        # nan -> 0 i.e. the train mean
         z = (x - np.asarray(self.mean)) / np.asarray(self.std)
         return np.clip(np.nan_to_num(z, nan=0.0), -CLIP, CLIP).astype(np.float32)
 
 
 class Bags(BaseModel):
-    """Documents as contiguous runs of span rows."""
-
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     doc_ids: list[str]
-    labels: np.ndarray
-    """Document label per bag."""
-    x: np.ndarray
-    """`[n_spans, n_features]`, raw until standardised."""
-    offsets: np.ndarray
-    """Bag `i` is rows `offsets[i]:offsets[i + 1]`."""
-    span_labels: np.ndarray
-    """Sentence label per span, -1 where unknown."""
+    labels: np.ndarray  # doc label per bag
+    x: np.ndarray  # [n_spans, n_features], raw until standardised
+    offsets: np.ndarray  # bag i = rows offsets[i]:offsets[i+1]
+    span_labels: np.ndarray  # -1 = unknown
     straddles: np.ndarray
 
     def __len__(self) -> int:
@@ -69,7 +60,6 @@ class Bags(BaseModel):
         return self.model_copy(update={"x": std.transform(self.x)})
 
     def subset(self, keep: np.ndarray) -> "Bags":
-        """The bags where `keep` (one bool per bag) is true, in order."""
         idx = np.flatnonzero(keep)
         rows = np.concatenate([np.arange(self.offsets[i], self.offsets[i + 1]) for i in idx])
         return Bags(
@@ -92,23 +82,18 @@ class Bags(BaseModel):
         )
 
     def sentence_labels(self) -> tuple[np.ndarray, np.ndarray]:
-        """Row mask of spans with a usable sentence label (known, not straddling), and labels."""
+        # known label and not straddling
         keep = (self.span_labels >= 0) & ~self.straddles
         return keep, self.span_labels[keep].astype(int)
 
 
 def in_sentence_validation(doc_ids: Sequence[str], groups: dict[str, str]) -> np.ndarray:
-    """Whether each seqxgpt-calib document falls in the sentence-validation slice.
-
-    One in `SENTENCE_VAL_BUCKETS` base documents, by stable hash of `group_id`, so a base
-    document never straddles the slice and the rest of the calibration pool.
-    """
+    # hashed on group id so a base doc cant end up on both sides
     return np.array([int(stable_hash(groups[d]), 16) % SENTENCE_VAL_BUCKETS == 0 for d in doc_ids])
 
 
 def load_bags(path: Path, names: Sequence[str], keep: Collection[str] | None = None) -> Bags:
-    """Read a feature file, optionally only the documents in `keep`. Rows of one document are
-    contiguous, in span order."""
+    """read features, optionally just the docs in keep"""
     cols = ["doc_id", "span_idx", "label", "span_label", "straddles", *names]
     filters = [("doc_id", "in", list(keep))] if keep is not None else None
     table = pq.read_table(path, columns=cols, filters=filters)
@@ -131,7 +116,7 @@ def load_bags(path: Path, names: Sequence[str], keep: Collection[str] | None = N
 def batches(
     bags: Bags, order: Sequence[int], batch_size: int
 ) -> Iterator[tuple[list[int], torch.Tensor, torch.Tensor]]:
-    """`(bag indices, x [B, S, F], mask [B, S])`, padded to the longest bag in each batch."""
+    # (idx, x [B,S,F], mask [B,S]), padded per batch
     sizes = bags.sizes
     for batch in _batches(list(order), sizes.tolist(), batch_size):
         width = int(sizes[batch].max())

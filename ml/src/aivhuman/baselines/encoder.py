@@ -1,4 +1,4 @@
-"""ModernBERT-base document classifier.... mean-pooled, one binary head, no MIL."""
+"""ModernBERT-base doc classifier, mean pooled, no MIL"""
 
 import math
 import random
@@ -18,13 +18,10 @@ from aivhuman.schema import LABEL_HUMAN
 
 MODEL_NAME: Final = "modernbert-doc"
 BACKBONE: Final = "answerdotai/ModernBERT-base"
-CHUNK: Final = 20_000
-"""Documents tokenised at a time."""
+CHUNK: Final = 20_000  # docs tokenised at a time
 
 
 class EncoderConfig(BaseModel):
-    """Training settings."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     max_length: int = 512
@@ -36,8 +33,7 @@ class EncoderConfig(BaseModel):
     weight_decay: float = 0.01
     warmup_frac: float = 0.05
     epochs: int = 2
-    machine_per_group: int = 4
-    """Machine docs sampled per group each epoch.....every human doc is always kept."""
+    machine_per_group: int = 4  # per epoch, human docs are always all kept
     dev_machine_per_group: int = 2
     seed: int = 20240501
 
@@ -57,7 +53,7 @@ class DocClassifier(nn.Module):
 
 
 def _batches(order: list[int], lengths: list[int], batch_size: int) -> list[list[int]]:
-    """Batches of similar length, to cut padding. Order across batches follows `order`."""
+    # group by similar length to cut padding
     window = batch_size * 50
     out: list[list[int]] = []
     for start in range(0, len(order), window):
@@ -79,8 +75,6 @@ def _collate(
 
 
 class Encoder:
-    """Tokenisation, training and scoring around a DocClassifier."""
-
     def __init__(self, cfg: EncoderConfig, device: torch.device | None = None) -> None:
         self.cfg = cfg
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -88,7 +82,7 @@ class Encoder:
         self.model = DocClassifier().to(self.device)
 
     def tokenize(self, docs: list[EvalDoc]) -> list[np.ndarray]:
-        """Token ids per document, as int32 arrays to keep large splits in memory."""
+        # int32 so the big splits fit in memory
         out: list[np.ndarray] = []
         for start in range(0, len(docs), CHUNK):
             encoded = self.tokenizer(
@@ -101,7 +95,6 @@ class Encoder:
 
     @torch.no_grad()
     def score(self, docs: list[EvalDoc]) -> np.ndarray:
-        """Machine probability per document."""
         self.model.eval()
         out = np.empty(len(docs), dtype=np.float64)
         for start in range(0, len(docs), CHUNK):
@@ -116,7 +109,7 @@ class Encoder:
         return out
 
     def fit(self, train: list[EvalDoc], dev: list[EvalDoc], checkpoint: Path) -> list[float]:
-        """Train, keeping the epoch with the best dev TPR at 1% FPR. Returns dev TPR per epoch."""
+        """Train, keeps best epoch by dev TPR@1%FPR. Returns dev TPR per epoch."""
         cfg = self.cfg
         rng = random.Random(cfg.seed)
         torch.manual_seed(cfg.seed)
@@ -184,7 +177,6 @@ class Encoder:
 def predict(
     encoder: Encoder, splits: dict[str, list[EvalDoc]], predictions_dir: Path
 ) -> Iterator[str]:
-    """Score every non-train split, skipping any already written. Yields each split done."""
     for split, docs in splits.items():
         path = predictions_dir / MODEL_NAME / f"{split}.parquet"
         if split == "train" or path.exists():

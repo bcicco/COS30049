@@ -1,4 +1,4 @@
-"""The dataloading / normalising report: one pass over the JSONL, written as CSV."""
+"""data loading / normalising report, one pass over the jsonl -> csv"""
 
 import csv
 import statistics
@@ -19,8 +19,6 @@ TOKEN_LIMITS: Final = (4096, 8192)
 
 
 class CorpusSummary(BaseModel):
-    """Everything the report needs about one corpus, from one pass over it."""
-
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     source: str = ""
@@ -31,8 +29,6 @@ class CorpusSummary(BaseModel):
     by_domain: dict[str, int] = Field(default_factory=dict)
     by_generator: dict[str, int] = Field(default_factory=dict)
     by_split_role: dict[str, int] = Field(default_factory=dict)
-    by_style: dict[str, int] = Field(default_factory=dict)
-    style_by_label: dict[str, dict[str, int]] = Field(default_factory=dict)
     groups: int = 0
     span_length_buckets: dict[str, int] = Field(default_factory=dict)
     docs_over_token_limit: dict[str, int] = Field(default_factory=dict)
@@ -84,10 +80,6 @@ class CorpusSummary(BaseModel):
             "by_split_role": dict(sorted(self.by_split_role.items())),
             "by_domain": dict(sorted(self.by_domain.items())),
             "by_generator": dict(sorted(self.by_generator.items())),
-            "by_style": dict(sorted(self.by_style.items())),
-            "style_by_label": {
-                k: dict(sorted(v.items())) for k, v in sorted(self.style_by_label.items())
-            },
             "span_length_buckets": dict(self.span_length_buckets),
             "docs_over_token_limit": dict(sorted(self.docs_over_token_limit.items())),
             "doc_tokens": self.quantiles(self.doc_tokens),
@@ -106,7 +98,6 @@ def _bucket_name(low: int, high: int) -> str:
 def summarise(
     path: Path, *, content_keys: dict[str, tuple[str, int]] | None = None
 ) -> CorpusSummary:
-    """One pass over one JSONL."""
     summary = CorpusSummary()
     groups: set[str] = set()
     buckets = {_bucket_name(lo, hi): 0 for lo, hi in LENGTH_BUCKETS}
@@ -124,16 +115,9 @@ def summarise(
 
         domain = doc.domain or "(none)"
         generator = doc.generator or "(human)"
-        style = str(doc.meta.get("detok_style", "(unknown)"))
         summary.by_domain[domain] = summary.by_domain.get(domain, 0) + 1
         summary.by_generator[generator] = summary.by_generator.get(generator, 0) + 1
         summary.by_split_role[doc.split_role] = summary.by_split_role.get(doc.split_role, 0) + 1
-        summary.by_style[style] = summary.by_style.get(style, 0) + 1
-        label_name = "human" if doc.label == LABEL_HUMAN else "machine"
-        summary.style_by_label.setdefault(style, {})
-        summary.style_by_label[style][label_name] = (
-            summary.style_by_label[style].get(label_name, 0) + 1
-        )
         doc_tokens = 0
         for span in doc.sentences:
             doc_tokens += span.n_tokens
@@ -169,7 +153,7 @@ Row = tuple[str, str, str, Any]
 METRICS_HEADER: Final = ("section", "source", "metric", "value")
 FINDINGS_HEADER: Final = ("kind", "subject", "expected", "measured", "consequence")
 
-# Where measurement contradicted expected
+# where what we measured didnt match what was expected
 FINDINGS: Final = (
     (
         "contradiction",
@@ -279,7 +263,7 @@ def metric_rows(
     overlap: dict[str, Any] | None = None,
     verify: list[dict[str, Any]] | None = None,
 ) -> list[Row]:
-    """Flatten every reported number into long-format rows."""
+    # long format, one row per number
     rows: list[Row] = []
 
     def add(section: str, source: str, values: dict[str, Any]) -> None:
@@ -308,7 +292,6 @@ def metric_rows(
         add("split_role", s.source, dict(sorted(s.by_split_role.items())))
         add("domain", s.source, dict(sorted(s.by_domain.items())))
         add("generator", s.source, dict(sorted(s.by_generator.items())))
-        add("detok_style", s.source, dict(sorted(s.by_style.items())))
         add("doc_tokens", s.source, s.quantiles(s.doc_tokens))
         add("spans_per_doc", s.source, s.quantiles(s.spans_per_doc))
         add("docs_over_tokens", s.source, s.docs_over_token_limit)
@@ -382,7 +365,7 @@ def build(
     overlap: dict[str, Any] | None = None,
     verify: list[dict[str, Any]] | None = None,
 ) -> Path:
-    """Summarise every JSONL and write the metrics CSV, findings CSV and JSON."""
+    """summarise every jsonl, writes metrics csv, findings csv + json"""
     summaries: list[CorpusSummary] = []
     sidecars: dict[str, dict[str, Any]] = {}
     keys: dict[str, dict[str, tuple[str, int]]] = {}
@@ -419,13 +402,8 @@ def build(
 def _overlap_from_keys(
     keys: dict[str, dict[str, tuple[str, int]]], docs: dict[str, int]
 ) -> dict[str, Any]:
-    """Pair up the content keys collected during the summary pass.
-
-    `shared_keys_human_both_sides` is the distinction that decides what to do
-    about an overlap. Two corpora drawing the same public human documents is
-    expected and mostly harmless; a machine generation appearing in a test set
-    is a leak of the model's own training text.
-    """
+    # human_both_sides is what matters: two corpora sharing public human docs is
+    # mostly fine, a machine text showing up in a test set is a real leak
     shared: dict[str, int] = {}
     human_only: dict[str, int] = {}
     examples: dict[str, list[list[str]]] = {}
@@ -446,8 +424,7 @@ def _overlap_from_keys(
         "shared_keys": shared,
         "shared_keys_human_both_sides": human_only,
         "unique_keys": {k: len(v) for k, v in keys.items()},
-        # Derivable rather than counted: a key is recorded once per corpus, so
-        # whatever a corpus has beyond its unique keys is an internal repeat.
+        # each key stored once per corpus so anything over the unique count is a repeat
         "internal_duplicate_docs": {k: docs.get(k, 0) - len(v) for k, v in keys.items()},
         "is_clean": not any(shared.values()),
         "examples": examples,

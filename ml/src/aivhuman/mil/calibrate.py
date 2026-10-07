@@ -1,8 +1,4 @@
-"""Isotonic calibration of sentence logits per length bucket, and its reliability report.
-
-Calibrated scores assume an even prior: each bucket is fitted with class-balancing weights,
-so a score is evidence for machine authorship and a bucket's own base rate does not move it.
-"""
+"""Per length bucket isotonic calibration + reliability report."""
 
 from collections.abc import Callable, Collection, Sequence
 from itertools import pairwise
@@ -21,14 +17,11 @@ from aivhuman.mil.data import Standardizer, load_bags
 from aivhuman.mil.model import MILModel
 from aivhuman.mil.train import score
 
-EDGES: Final = (15, 30, 60)
-"""Token-count bucket edges, left-closed: `<15, 15-30, 30-60, 60+`."""
-SHORT_CAP: Final = 0.75
-"""Scores in the shortest bucket are clipped to `[1 - SHORT_CAP, SHORT_CAP]`."""
+EDGES: Final = (15, 30, 60)  # <15, 15-30, 30-60, 60+
+SHORT_CAP: Final = 0.75  # clip shortest bucket to [1-cap, cap]
 BINS: Final = 10
 ECE_TARGET: Final = 0.05
-MIN_STYLE_SPANS: Final = 200
-"""Smallest bucket-by-style cell the report scores."""
+MIN_CELL_SPANS: Final = 200
 
 
 def bucket_of(n_tokens: np.ndarray, edges: Sequence[int] = EDGES) -> np.ndarray:
@@ -41,21 +34,19 @@ def bucket_names(edges: Sequence[int] = EDGES) -> list[str]:
 
 
 def balanced_weights(labels: np.ndarray) -> np.ndarray:
-    """Weights giving each class half the total mass."""
+    # each class gets half the mass, so scores are at an even prior
     n1 = max(int(labels.sum()), 1)
     n0 = max(len(labels) - n1, 1)
     return np.where(labels == 1, 0.5 / n1, 0.5 / n0)
 
 
 def shift_prior(probs: np.ndarray, prior: float) -> np.ndarray:
-    """Move even-prior probabilities to a machine base rate of `prior`."""
+    """even prior probs -> machine base rate `prior`"""
     num = probs * prior
     return num / (num + (1 - probs) * (1 - prior))
 
 
 class Calibrator(BaseModel):
-    """Piecewise-linear isotonic map from sentence logit to probability, one per bucket."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     edges: list[int]
@@ -109,8 +100,7 @@ class Calibrator(BaseModel):
 def reliability(
     labels: np.ndarray, probs: np.ndarray, balanced: bool = True, bins: int = BINS
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Per equal-width bin: mean predicted, observed machine rate, and share of the weight.
-    Empty bins are NaN with zero weight."""
+    """(pred, obs, weight share) per bin. empty bins come out nan"""
     w = balanced_weights(labels) if balanced else np.full(len(labels), 1.0 / len(labels))
     idx = np.minimum((probs * bins).astype(int), bins - 1)
     mass = np.bincount(idx, weights=w, minlength=bins)
@@ -121,26 +111,22 @@ def reliability(
 
 
 def ece(labels: np.ndarray, probs: np.ndarray, balanced: bool = True, bins: int = BINS) -> float:
-    """Expected calibration error over equal-width bins, class-balanced by default."""
     pred, obs, share = reliability(labels, probs, balanced, bins)
     ok = share > 0
     return float(np.sum(share[ok] * np.abs(pred[ok] - obs[ok])))
 
 
 class Spans(BaseModel):
-    """Labelled, non-straddling sentences of one split with their raw logits."""
-
+    # labelled non straddling sentences of a split + raw logits
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     name: str
     labels: np.ndarray
     logits: np.ndarray
     n_tokens: np.ndarray
-    styles: np.ndarray
     groups: np.ndarray
     doc_ids: np.ndarray
-    span_idx: np.ndarray
-    """Position of each span in its document."""
+    span_idx: np.ndarray  # position in doc
 
 
 def load_spans(
@@ -154,7 +140,7 @@ def load_spans(
     bags = load_bags(path, std.names, keep).standardised(std)
     logits = score(model, bags).sentence_logits
     filters = [("doc_id", "in", list(keep))] if keep is not None else None
-    meta = pq.read_table(path, columns=["doc_id", "len_tokens", "detok_style"], filters=filters)
+    meta = pq.read_table(path, columns=["doc_id", "len_tokens"], filters=filters)
     doc_ids = np.repeat(np.asarray(bags.doc_ids, dtype=object), bags.sizes)
     if not (meta["doc_id"].to_numpy(zero_copy_only=False) == doc_ids).all():
         raise ValueError(f"{path}: span metadata is not aligned with the bags")
@@ -165,7 +151,6 @@ def load_spans(
         labels=labels,
         logits=logits[rows],
         n_tokens=meta["len_tokens"].to_numpy(zero_copy_only=False)[rows],
-        styles=meta["detok_style"].to_numpy(zero_copy_only=False)[rows],
         groups=np.array([group_of(d) for d in doc_ids[rows]]),
         doc_ids=doc_ids[rows],
         span_idx=span_idx[rows],
@@ -173,46 +158,35 @@ def load_spans(
 
 
 class CellMetrics(BaseModel):
-    """Calibration of one split, bucket and style."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     split: str
     bucket: str
-    style: str = "all"
     spans: int
     machine_share: float
     auroc_raw: float
-    auroc: float
-    """On calibrated scores; below `auroc_raw` only through ties the isotonic fit creates."""
+    auroc: float  # calibrated, can drop a bit below auroc_raw bc of isotonic ties
     ece: float
     ece_ci: tuple[float, float] | None = None
     ece_uncapped: float
-    ece_at_prior: float
-    """Unweighted ECE after shifting scores to this cell's own machine share."""
+    ece_at_prior: float  # unweighted, scores shifted to the cells own machine share
     p01: float
     p99: float
-    reliability: list[list[float | None]]
-    """Per bin: mean predicted, observed rate, weight share."""
+    reliability: list[list[float | None]]  # pred, obs, share
 
 
-def _cell(
-    cal: Calibrator, spans: Spans, m: np.ndarray, bucket: str, style: str, ci: bool
-) -> CellMetrics | None:
+def _cell(cal: Calibrator, spans: Spans, m: np.ndarray, bucket: str) -> CellMetrics | None:
     y = spans.labels[m]
-    if len(y) < MIN_STYLE_SPANS or y.min() == y.max():
+    if len(y) < MIN_CELL_SPANS or y.min() == y.max():
         return None
     logits, n = spans.logits[m], spans.n_tokens[m]
     probs = cal.apply(logits, n)
     prior = float(y.mean())
-    interval = None
-    if ci:
-        (interval,) = bootstrap_ci(y, probs, spans.groups[m], [ece])
+    (interval,) = bootstrap_ci(y, probs, spans.groups[m], [ece])
     pred, obs, share = reliability(y, probs)
     return CellMetrics(
         split=spans.name,
         bucket=bucket,
-        style=style,
         spans=len(y),
         machine_share=prior,
         auroc_raw=float(roc_auc_score(y, logits)),
@@ -227,55 +201,44 @@ def _cell(
     )
 
 
-def evaluate(cal: Calibrator, spans: Spans, by_style: bool = False) -> list[CellMetrics]:
-    """Per-bucket and overall cells, with group-bootstrap intervals; optionally per style."""
+def evaluate(cal: Calibrator, spans: Spans) -> list[CellMetrics]:
     buckets = bucket_of(spans.n_tokens, cal.edges)
     names = bucket_names(cal.edges)
     masks = [(names[k], buckets == k) for k in range(len(names))]
     masks.append(("all", np.ones(len(buckets), dtype=bool)))
     out = []
     for bucket, m in masks:
-        if by_style:
-            for style in sorted(set(spans.styles[m])):
-                cell = _cell(cal, spans, m & (spans.styles == style), bucket, style, ci=False)
-                if cell is not None:
-                    out.append(cell)
-        else:
-            cell = _cell(cal, spans, m, bucket, "all", ci=True)
-            if cell is not None:
-                out.append(cell)
+        cell = _cell(cal, spans, m, bucket)
+        if cell is not None:
+            out.append(cell)
     return out
 
 
 def report(
     cal: Calibrator,
     cells: list[CellMetrics],
-    style_cells: list[CellMetrics],
     cap_moved: tuple[int, int],
     out_dir: Path,
 ) -> Path:
-    """Write `calibration.json` and the reliability diagrams."""
+    """writes calibration.json + reliability.png"""
     moved, short = cap_moved
     payload = {
         "calibrator": {"edges": cal.edges, "short_cap": cal.short_cap, "n_fit": cal.n_fit},
         "bins": BINS,
         "ece_target": ECE_TARGET,
         "cells": [c.model_dump() for c in cells],
-        "style_cells": [c.model_dump() for c in style_cells],
-        "min_style_spans": MIN_STYLE_SPANS,
+        "min_cell_spans": MIN_CELL_SPANS,
         "cap_moved": {"moved": moved, "short_spans": short},
     }
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "calibration.json"
     path.write_bytes(orjson.dumps(payload, option=orjson.OPT_INDENT_2))
-    _plot([c for c in cells if c.bucket != "all"], "split", out_dir / "reliability.png")
-    _plot([c for c in style_cells if c.bucket != "all"], "style", out_dir / "reliability_style.png")
+    _plot([c for c in cells if c.bucket != "all"], out_dir / "reliability.png")
     return path
 
 
-def _plot(cells: list[CellMetrics], series: str, path: Path) -> None:
-    """One panel per bucket: reliability curve per series, diagonal, and the first series'
-    weight per bin as faint bars."""
+def _plot(cells: list[CellMetrics], path: Path) -> None:
+    # one panel per bucket, faint bars = weight per bin of the first split
     import matplotlib
 
     matplotlib.use("Agg")
@@ -292,8 +255,7 @@ def _plot(cells: list[CellMetrics], series: str, path: Path) -> None:
         for c in (c for c in cells if c.bucket == bucket):
             pred, obs, share = (np.array(r, dtype=float) for r in c.reliability)
             ok = ~np.isnan(pred)
-            label = getattr(c, series)
-            ax.plot(pred[ok], obs[ok], marker="o", ms=3, label=f"{label} (ECE {c.ece:.3f})")
+            ax.plot(pred[ok], obs[ok], marker="o", ms=3, label=f"{c.split} (ECE {c.ece:.3f})")
             if first:
                 ax.bar(centres, share, width=1 / BINS, alpha=0.12, color="C0")
                 first = False
