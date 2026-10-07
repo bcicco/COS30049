@@ -18,6 +18,8 @@ OVERALL_COLOUR: Final = "#52514e"
 
 
 class PRCell(BaseModel):
+    """p/r at one threshold for one length bucket"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     bucket: str
@@ -33,6 +35,8 @@ class PRCell(BaseModel):
 
 
 class OperatingPoint(BaseModel):
+    """one threshold: per bucket p/r plus doc level overlap and false highlights"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str
@@ -47,6 +51,8 @@ class OperatingPoint(BaseModel):
 
 
 class SentenceReport(BaseModel):
+    """all operating points for one split"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     split: str
@@ -59,6 +65,7 @@ class SentenceReport(BaseModel):
 
 def threshold_at_fpr(labels: np.ndarray, probs: np.ndarray, fpr: float) -> float:
     """lowest threshold with at most `fpr` of human spans >= it"""
+    # k-th highest human score, nudged up so ties at it dont get flagged
     human = np.sort(probs[labels == 0])[::-1]
     k = int(np.floor(fpr * len(human)))
     if k >= len(human):
@@ -67,6 +74,7 @@ def threshold_at_fpr(labels: np.ndarray, probs: np.ndarray, fpr: float) -> float
 
 
 def _rates(y: np.ndarray, flag: np.ndarray) -> tuple[float, float, float, float]:
+    # precision, precision at an even prior, recall, fpr
     tp = float((flag & (y == 1)).sum())
     fp = float((flag & (y == 0)).sum())
     recall = tp / max(int((y == 1).sum()), 1)
@@ -77,6 +85,7 @@ def _rates(y: np.ndarray, flag: np.ndarray) -> tuple[float, float, float, float]
 
 
 def pr_cell(y: np.ndarray, probs: np.ndarray, threshold: float, bucket: str) -> PRCell:
+    """metrics for the spans in one bucket at `threshold`"""
     precision, even, recall, fpr = _rates(y, probs >= threshold)
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     return PRCell(
@@ -93,6 +102,7 @@ def pr_cell(y: np.ndarray, probs: np.ndarray, threshold: float, bucket: str) -> 
 
 def doc_overlap(spans: Spans, flag: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """per doc: token weighted IoU, number of flagged runs, is_human. iou nan for human docs"""
+    # inv maps each span to its doc, bincount sums per doc
     _, inv = np.unique(spans.doc_ids, return_inverse=True)
     y = spans.labels == 1
     w = spans.n_tokens.astype(np.float64)
@@ -101,6 +111,7 @@ def doc_overlap(spans: Spans, flag: np.ndarray) -> tuple[np.ndarray, np.ndarray,
     human = np.bincount(inv, y) == 0
     with np.errstate(invalid="ignore", divide="ignore"):
         iou = np.where(human, np.nan, inter / union)
+    # a run starts at a flagged span whose previous span (same doc, idx - 1) isnt flagged
     same_doc = np.r_[False, inv[1:] == inv[:-1]]
     adjacent = same_doc & (np.r_[-2, spans.span_idx[:-1]] == spans.span_idx - 1)
     starts = flag & ~(adjacent & np.r_[False, flag[:-1]])
@@ -121,6 +132,7 @@ def _masks(spans: Spans, edges: list[int]) -> list[tuple[str, np.ndarray]]:
 def operating_point(
     spans: Spans, probs: np.ndarray, threshold: float, name: str, edges: list[int]
 ) -> OperatingPoint:
+    """p/r per bucket, overlap and false highlight rate at one threshold"""
     # bootstrap ci only on the overall cell, its slow
     cells = [pr_cell(spans.labels[m], probs[m], threshold, b) for b, m in _masks(spans, edges)]
     p_ci, r_ci = bootstrap_ci(
@@ -133,6 +145,7 @@ def operating_point(
 
     flag = probs >= threshold
     iou, regions, human = doc_overlap(spans, flag)
+    # false highlight = wholly human doc with >= 1 flagged sentence
     flagged_machine = ~human & (regions > 0)
     return OperatingPoint(
         name=name,
@@ -150,6 +163,8 @@ def operating_point(
 def evaluate(
     spans: Spans, probs: np.ndarray, thresholds: dict[str, float], edges: list[int]
 ) -> SentenceReport:
+    """average precision per bucket + every operating point in `thresholds`"""
+    # even = reweighted to a 50/50 prior, seqxgpt is mostly machine
     ap, ap_even = {}, {}
     for b, m in _masks(spans, edges):
         y, p = spans.labels[m], probs[m]
@@ -168,6 +183,7 @@ def evaluate(
 def plot_pr(
     spans: Spans, probs: np.ndarray, report: SentenceReport, edges: list[int], path: Path
 ) -> None:
+    """pr curve per length bucket with the operating points marked"""
     import matplotlib
 
     matplotlib.use("Agg")

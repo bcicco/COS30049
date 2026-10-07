@@ -24,10 +24,12 @@ MAX_EXAMPLES: Final = 20
 
 
 class RawRow(BaseModel):
+    """one row of the clean RAID parquet"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
-    source_id: str
+    source_id: str  # the human doc this generation came from, used as the group key
     adv_source_id: str
     model: str  # generator col, "human" here is the label
 
@@ -42,6 +44,8 @@ class RawRow(BaseModel):
 
 
 class RaidStats(BaseModel):
+    """row counts + grouping checks from a scan, used for the dataset report"""
+
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     rows: NonNegativeInt = 0
@@ -79,6 +83,7 @@ class RaidStats(BaseModel):
 
     @property
     def integrity_ok(self) -> bool:
+        # known domains, clean rows only, each group in one domain, both classes present
         return (
             not self.unknown_domains
             and set(self.attacks_seen) <= {CLEAN_ATTACK}
@@ -112,6 +117,7 @@ class RaidStats(BaseModel):
 
 
 def load_rows(path: Path, *, batch_size: int = BATCH_SIZE) -> Iterator[RawRow]:
+    """stream clean rows in parquet batches so the whole file never sits in memory"""
     handle = open_clean(path)
     for batch in handle.iter_batches(batch_size=batch_size):
         for row in batch.to_pylist():
@@ -125,6 +131,7 @@ def build_docs(
     segmenter: Segmenter | None = None,
     stats: RaidStats | None = None,
 ) -> Iterator[Doc]:
+    """stream Docs, filling stats as it goes"""
     seg = segmenter or Segmenter()
     st = stats if stats is not None else RaidStats()
 
@@ -137,6 +144,7 @@ def build_docs(
 
 
 def scan(path: Path, *, batch_size: int = BATCH_SIZE, stats: RaidStats | None = None) -> RaidStats:
+    """count rows without building docs"""
     st = stats if stats is not None else RaidStats()
     for row in load_rows(path, batch_size=batch_size):
         account(row, st)
@@ -144,7 +152,9 @@ def scan(path: Path, *, batch_size: int = BATCH_SIZE, stats: RaidStats | None = 
 
 
 def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
+    """normalise + segment one row into a Doc, None if the text is empty"""
     # pure so it can run in a worker
+    # raid has no label col, model == "human" is the label
     label = raid_label(row.model)
 
     text = nfc(row.generation)
@@ -161,6 +171,7 @@ def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
         source="raid",
         domain=row.domain,
         generator=None if label == LABEL_HUMAN else row.model,
+        # human doc + all its generations share a group so they land in the same split
         group_id=raid_group_id(row.source_id),
         split_role=SPLIT_ROLE,
         sentences=[

@@ -24,6 +24,8 @@ CALIB_FRACTION: Final = 0.50
 
 
 class Row(BaseModel):
+    """the bits of a doc that splitting needs, no text kept"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     doc_id: str
@@ -36,10 +38,12 @@ class Row(BaseModel):
 
 
 class SplitError(ValueError):
-    pass
+    """raised when a split invariant is broken"""
 
 
 class SplitStats(BaseModel):
+    """per split counts written to the split report"""
+
     model_config = ConfigDict(extra="forbid")
 
     docs: dict[str, int] = Field(default_factory=dict)
@@ -53,6 +57,7 @@ class SplitStats(BaseModel):
 
 
 def read_rows(path: Path) -> Iterator[Row]:
+    """stream a processed jsonl into rows, text is hashed then dropped"""
     with path.open("rb") as fh:
         for line in fh:
             if not line.strip():
@@ -71,13 +76,15 @@ def read_rows(path: Path) -> Iterator[Row]:
 
 def merge_groups(rows: Iterable[Row]) -> dict[str, str]:
     """group_id -> unit root, groups sharing a text get merged"""
-    # root = smallest group_id in the component so row order doesnt matter
+    # union find over (text hash -> first group seen). root = smallest group_id in the
+    # component so row order doesnt matter
 
     parent: dict[str, str] = {}
 
     def find(g: str) -> str:
         parent.setdefault(g, g)
         while parent[g] != g:
+            # path halving
             parent[g] = parent[parent[g]]
             g = parent[g]
         return g
@@ -94,13 +101,16 @@ def merge_groups(rows: Iterable[Row]) -> dict[str, str]:
 
 
 def unit_fraction(root: str) -> float:
+    """deterministic value in [0, 1) from the unit hash, used instead of an rng"""
     return int(stable_hash(root, 16), 16) / 16**16
 
 
 def split_raid(rows: list[Row], stats: SplitStats) -> dict[str, list[Row]]:
+    """train / dev / raid-ood, whole units only so a human doc and its generations stay together"""
     units = merge_groups(rows)
     stats.merged_groups["raid"] = sum(g != root for g, root in units.items())
 
+    # a unit with any held out domain doc goes to ood entirely
     ood_units = {units[r.group_id] for r in rows if r.domain in HELD_OUT_DOMAINS}
     out: dict[str, list[Row]] = {"train": [], "dev": [], "raid-ood": []}
     dropped = 0
@@ -110,7 +120,9 @@ def split_raid(rows: list[Row], stats: SplitStats) -> dict[str, list[Row]]:
         if unit in ood_units or u < OOD_FRACTION:
             out["raid-ood"].append(row)
         elif row.generator in HELD_OUT_GENERATORS:
+            # held out generator in a seen unit, cant go to train or dev so its dropped
             dropped += 1
+        # dev is DEV_FRACTION of what ood didnt take
         elif u < OOD_FRACTION + DEV_FRACTION * (1 - OOD_FRACTION):
             out["dev"].append(row)
         else:
@@ -120,7 +132,7 @@ def split_raid(rows: list[Row], stats: SplitStats) -> dict[str, list[Row]]:
 
 
 def split_mage(rows: list[Row], foreign_keys: set[str], stats: SplitStats) -> dict[str, list[Row]]:
-    # drops texts that also show up in another corpus
+    """mage-x / mage-para, drops texts that also show up in another corpus"""
     para_groups = {r.group_id for r in rows if r.split_role == "xcorpus_para_test"}
     out: dict[str, list[Row]] = {"mage-x": [], "mage-para": []}
     foreign = para_overlap = 0
@@ -129,6 +141,7 @@ def split_mage(rows: list[Row], foreign_keys: set[str], stats: SplitStats) -> di
             foreign += 1
         elif row.split_role == "xcorpus_para_test":
             out["mage-para"].append(row)
+        # unparaphrased original of a para doc, keep it out of mage-x
         elif row.group_id in para_groups:
             para_overlap += 1
         else:
@@ -139,13 +152,14 @@ def split_mage(rows: list[Row], foreign_keys: set[str], stats: SplitStats) -> di
 
 
 def split_daigt(rows: list[Row], foreign_keys: set[str], stats: SplitStats) -> dict[str, list[Row]]:
+    """all of daigt is one test split, minus texts seen in another corpus"""
     kept = [r for r in rows if r.key not in foreign_keys]
     stats.dropped["daigt_shared_with_other_corpus"] = len(rows) - len(kept)
     return {"daigt": kept}
 
 
 def split_seqxgpt(rows: list[Row], stats: SplitStats) -> dict[str, list[Row]]:
-    # 50/50 by base doc
+    """calib / test 50/50 by base doc"""
     units = merge_groups(rows)
     stats.merged_groups["seqxgpt"] = sum(g != root for g, root in units.items())
     out: dict[str, list[Row]] = {"seqxgpt-calib": [], "seqxgpt-test": []}
@@ -160,6 +174,7 @@ def split_seqxgpt(rows: list[Row], stats: SplitStats) -> dict[str, list[Row]]:
 
 
 def check_disjoint(splits: dict[str, list[Row]]) -> None:
+    """every doc in at most one split, every group in exactly one"""
     owner: dict[str, str] = {}
     seen_docs: set[str] = set()
     for name, rows in splits.items():
@@ -175,8 +190,10 @@ def check_disjoint(splits: dict[str, list[Row]]) -> None:
 def assign(
     raid: list[Row], mage: list[Row], seqxgpt: list[Row], daigt: list[Row] | None = None
 ) -> tuple[dict[str, list[Row]], SplitStats]:
+    """split every corpus, check the invariants and count what landed where"""
     stats = SplitStats()
     daigt = daigt or []
+    # text hashes from the training corpora, any test doc with the same text is a leak
     foreign = {r.key for r in raid} | {r.key for r in seqxgpt}
     splits = (
         split_raid(raid, stats)
@@ -186,6 +203,7 @@ def assign(
     )
     check_disjoint(splits)
 
+    # belt and braces, nothing held out can reach train or dev
     for row in splits["train"] + splits["dev"]:
         if row.domain in HELD_OUT_DOMAINS or row.generator in HELD_OUT_GENERATORS:
             raise SplitError(f"{row.doc_id} is held out but in a training split")
@@ -201,7 +219,8 @@ def assign(
 
 
 def write_manifests(splits: dict[str, list[Row]], directory: Path) -> None:
-    # {split}.json: doc_id -> group_id
+    """{split}.json: doc_id -> group_id, sorted so diffs stay small"""
+    # manifests are tiny and tracked in git, the data itself never moves
     directory.mkdir(parents=True, exist_ok=True)
     for name, rows in splits.items():
         payload = {r.doc_id: r.group_id for r in rows}
@@ -211,6 +230,7 @@ def write_manifests(splits: dict[str, list[Row]], directory: Path) -> None:
 
 
 def build(processed_dir: Path, manifests_dir: Path, report_path: Path) -> SplitStats:
+    """read all corpora, write the manifests and the split report"""
     raid, mage, seqxgpt, daigt = (
         list(read_rows(processed_dir / f"{source}.jsonl"))
         for source in ("raid", "mage", "seqxgpt", "daigt")

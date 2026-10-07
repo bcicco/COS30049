@@ -63,7 +63,7 @@ class IngestGateError(RuntimeError):
 
 
 class IntegrityGateError(IngestGateError):
-    pass
+    """upstream file failed its integrity scan (bad labels, missing cols)"""
 
 
 class _TextCounters(Protocol):
@@ -138,13 +138,16 @@ def _fallback_segmenter() -> Segmenter:
 
 
 def _init_worker() -> None:
+    # warm up segmenter + tokenizer once per worker, not per batch
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     _segmenter()
     tokenizer()
 
 
 def _task(batch: _Batch, use_pysbd: bool = True) -> _Result:
+    # runs in a worker. returns serialised lines not Docs, bytes pickle way cheaper
     seg = _segmenter() if use_pysbd else _fallback_segmenter()
+    # fresh stats per batch, parent sums them
     seg.stats = SegmentStats()
     build = _BUILDERS[batch.source]
 
@@ -184,6 +187,7 @@ def _atomic_writer(path: Path) -> Iterator[BinaryIO]:
     partial.replace(path)
 
 
+# counts rows into the adapter stats as they stream past, no second pass over the data
 def _accounted(
     rows: Iterable[Any], account: Callable[[Any, Any], Any], stats: Any
 ) -> Iterator[Any]:
@@ -204,11 +208,13 @@ def _batches(rows: Iterable[Any], source: str, size: int) -> Iterator[_Batch]:
 
 
 def _windows[T](items: Iterator[T], size: int) -> Iterator[list[T]]:
+    # pulls at most `size` batches at a time, this is what bounds memory
     while window := list(itertools.islice(items, size)):
         yield window
 
 
 def _merge_segment_stats(total: SegmentStats, delta: SegmentStats) -> None:
+    # sum every counter, raises if a non counter field ever gets added
     for name in SegmentStats.model_fields:
         running = getattr(total, name)
         if not isinstance(running, int):
@@ -268,11 +274,13 @@ class _PoolRunner:
         pending = tasks
         while pending:
             pool = self._ensure_pool()
+            # results collected in submit order so the output jsonl order is stable
             handles = [pool.apply_async(_task, (batch,)) for batch in pending]
             for index, handle in enumerate(handles):
                 try:
                     out.append(handle.get(timeout=timeout))
                 except multiprocessing.TimeoutError:
+                    # cant cancel one task, kill the whole pool and respawn
                     self.close()
                     out.extend(on_timeout(pending[index]))
                     # everything after the bad one died w/ the pool
@@ -295,6 +303,7 @@ class _PoolRunner:
 
 
 def _row_label(row: Any) -> str:
+    # best effort id for logging a doc that had to skip pysbd
     for attr in ("id", "doc_id"):
         value = getattr(row, attr, None)
         if value is not None:
@@ -352,6 +361,7 @@ def _run(
     return docs, written, segment_stats, perf_counter() - started, timeouts, forced
 
 
+# packs the run outputs into the sidecar model
 def _result(
     source: str,
     out_path: Path,
@@ -401,8 +411,10 @@ def ingest_raid(
     progress: bool = False,
     check_integrity: bool = True,
 ) -> IngestResult:
+    """clean RAID parquet -> raid.jsonl"""
     n_workers = config.workers() if workers is None else workers
 
+    # cheap scan first, refuse to spend an hour ingesting a broken file
     if check_integrity:
         pre = raid.scan(clean_parquet)
         if not pre.integrity_ok:
@@ -446,6 +458,7 @@ def ingest_raid_attacks(
     batch_size: int = BATCH_SIZE,
     progress: bool = False,
 ) -> IngestResult:
+    """attacked RAID rows -> raid-attacks.jsonl"""
     # no integrity gate here, the attacks are the whole point
     n_workers = config.workers() if workers is None else workers
     stats = raid.RaidStats()
@@ -487,6 +500,7 @@ def ingest_mage(
     progress: bool = False,
     check_integrity: bool = True,
 ) -> IngestResult:
+    """MAGE csvs -> mage.jsonl"""
     n_workers = config.workers() if workers is None else workers
 
     if check_integrity:
@@ -532,6 +546,7 @@ def ingest_daigt(
     batch_size: int = BATCH_SIZE,
     progress: bool = False,
 ) -> IngestResult:
+    """DAIGT v2 csv -> daigt.jsonl"""
     n_workers = config.workers() if workers is None else workers
 
     pre = daigt.scan(path)
@@ -575,7 +590,8 @@ def ingest_seqxgpt(
     split_role: str = "calib_pool",
     progress: bool = False,
 ) -> IngestResult:
-    # sequential, no pool
+    """SeqXGPT jsonl files -> seqxgpt.jsonl"""
+    # sequential, no pool. small enough + group recovery needs every record at once
     stats = seqxgpt.SeqXGPTStats()
     segmenter = Segmenter()
     out_path = out_dir / OUTPUT_NAMES["seqxgpt"]
@@ -588,7 +604,7 @@ def ingest_seqxgpt(
             written += fh.write(doc_to_json(doc) + b"\n")
             docs += 1
             prog.update(docs)
-    # check labels here
+    # check labels here, quarantined = boundary or label file didnt line up
     quarantine_ok = stats.quarantined == 0 and stats.label_file_mismatches == 0
     return _result(
         "seqxgpt",
@@ -607,7 +623,7 @@ def ingest_seqxgpt(
 
 
 def write_sidecar(result: IngestResult, out_dir: Path) -> Path:
-    # {source}.stats.json, report.py reads these
+    """{source}.stats.json, report.py and verify.py read these"""
     path = out_dir / f"{result.source}.stats.json"
     path.write_bytes(orjson.dumps(result.as_dict(), option=orjson.OPT_INDENT_2))
     return path

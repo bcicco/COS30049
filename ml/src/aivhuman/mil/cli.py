@@ -10,23 +10,27 @@ from typing import Any
 from aivhuman import config
 from aivhuman.evaluate import SPLIT_SOURCE
 
+# every split that gets a feature parquet in data/features
 FEATURE_SPLITS = tuple(SPLIT_SOURCE)
 EVAL_MODELS = ("tfidf-lr", "modernbert-doc", "mil-linear", "mil-gam")
 REPORT_BASELINES = ("tfidf-lr", "modernbert-doc", "mil-gam")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """entry point for aivhuman-mil"""
     config.configure_stdio()
     parser = argparse.ArgumentParser(prog="aivhuman-mil", description=__doc__)
     subparsers = parser.add_subparsers()
 
+    # per sentence features (gpt-2, spacy, lexical) -> one parquet per split
     p = subparsers.add_parser("extract")
     p.add_argument("--split", nargs="+", default=list(FEATURE_SPLITS), choices=FEATURE_SPLITS)
-    p.add_argument("--limit", type=int, default=None)
-    p.add_argument("--token-budget", type=int, default=2048)
+    p.add_argument("--limit", type=int, default=None)  # sample n docs into features/smoke
+    p.add_argument("--token-budget", type=int, default=2048)  # tokens per gpt-2 batch
     p.add_argument("--workers", type=int, default=None)
     p.set_defaults(handler=_extract)
 
+    # human prefix + machine suffix docs from the same group, then extract them
     p = subparsers.add_parser("splice")
     p.add_argument("--adv", action="store_true")
     p.add_argument("--limit", type=int, default=None)
@@ -34,10 +38,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--workers", type=int, default=None)
     p.set_defaults(handler=_splice)
 
+    # corpus artefact / length / transfer checks per feature
     p = subparsers.add_parser("vet")
     p.add_argument("--smoke", action="store_true")
     p.set_defaults(handler=_vet)
 
+    # fit the mil model, best config picked on dev pAUC + sentence AUROC
     p = subparsers.add_parser("train")
     p.add_argument("--smoke", action="store_true")
     p.add_argument(
@@ -51,32 +57,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         nargs="+",
         default=[],
     )
-    p.add_argument("--kept", action="store_true")
-    p.add_argument("--run", default=None)
+    p.add_argument("--kept", action="store_true")  # just the final config, no sweep
+    p.add_argument("--run", default=None)  # named run, own checkpoint + report dir
     p.set_defaults(handler=_train)
 
+    # score every non train split with the saved model
     p = subparsers.add_parser("predict")
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--run", default=None)
     p.set_defaults(handler=_predict)
 
+    # doc level metrics for every model with saved predictions
     p = subparsers.add_parser("evaluate")
     p.add_argument("--models", nargs="+", default=list(EVAL_MODELS))
     p.add_argument("--report-dir", type=Path, default=config.MIL_REPORT_DIR)
     p.set_defaults(handler=_evaluate)
 
+    # per length calibrator on seqxgpt-calib, ECE checked on test + dev-spliced
     p = subparsers.add_parser("calibrate")
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--run", default=None)
     p.set_defaults(handler=_calibrate)
 
+    # k-means on machine sentences only, labels never seen
     p = subparsers.add_parser("cluster")
     p.add_argument("--split", default="dev")
-    p.add_argument("--k", type=int, default=None)
+    p.add_argument("--k", type=int, default=None)  # None = pick k by silhouette
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--run", default=None)
     p.set_defaults(handler=_cluster)
 
+    # final evaluation: doc metrics vs baselines + sentence operating points
     p = subparsers.add_parser("report")
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--run", default=None)
@@ -101,6 +112,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _extract(args: argparse.Namespace) -> int:
+    """extract features for each requested split"""
+    # gpt-2 runs here (gpu if there is one), spacy + lexical features run in the pool
     from multiprocessing import Pool
 
     import torch
@@ -117,6 +130,7 @@ def _extract(args: argparse.Namespace) -> int:
 
 
 def _splice(args: argparse.Namespace) -> int:
+    """spliced docs from train/dev (or the attacked versions), then extract them"""
     from multiprocessing import Pool
 
     import torch
@@ -143,6 +157,7 @@ def _splice(args: argparse.Namespace) -> int:
 
 
 def _extract_split(split: str, limit: int | None, out_dir: Path, ref: Any, pool: Any) -> None:
+    """features for one split, skipped if the parquet already exists"""
     from aivhuman.features import extract
     from aivhuman.features.load import load_span_docs
 
@@ -160,6 +175,7 @@ def _extract_split(split: str, limit: int | None, out_dir: Path, ref: Any, pool:
 
 
 def _vet(args: argparse.Namespace) -> int:
+    """run the feature checks and print the flags each feature raised"""
     from aivhuman.features import vet
 
     features, _, _, reports = _dirs(args.smoke)
@@ -184,7 +200,10 @@ def _dirs(smoke: bool, run: str | None = None) -> tuple[Path, Path, Path, Path]:
 
 
 def _training_bags(features: Path, mix: str) -> tuple[Any, Any, Any, Any]:
+    """train, dev and sentence validation bags, all standardised the same way"""
     # std is always fit on clean train, whatever the mix
+    # base = clean train, spliced = human train + spliced, all = all train + spliced,
+    # spliced-adv = spliced + human attacked + attacked spliced
     from aivhuman.features import EXCLUDED, FEATURE_NAMES
     from aivhuman.mil.data import Standardizer, load_bags
 
@@ -194,6 +213,7 @@ def _training_bags(features: Path, mix: str) -> tuple[Any, Any, Any, Any]:
     train_bags = train_bags.standardised(std)
     if mix != "base":
         spliced = load_bags(features / "train-spliced.parquet", names).standardised(std)
+        # wholly machine docs dropped, machine text is only seen next to human text
         if mix != "all":
             train_bags = train_bags.subset(train_bags.labels == 0)
         train_bags = train_bags.concat(spliced)
@@ -202,11 +222,13 @@ def _training_bags(features: Path, mix: str) -> tuple[Any, Any, Any, Any]:
         adv_spliced = load_bags(features / "train-adv-spliced.parquet", names).standardised(std)
         train_bags = train_bags.concat(adv.subset(adv.labels == 0)).concat(adv_spliced)
     dev_bags = load_bags(features / "dev.parquet", names).standardised(std)
+    # 20% slice of seqxgpt-calib, sentence AUROC for model selection
     sent_bags = _calibration_slice(features, std, validation=True)
     return train_bags, dev_bags, sent_bags, std
 
 
 def _train(args: argparse.Namespace) -> int:
+    """train each config, keep the best by selection score, save ckpt + reports"""
     from aivhuman.mil import predict, train
     from aivhuman.mil.data import load_bags
 
@@ -237,6 +259,7 @@ def _train(args: argparse.Namespace) -> int:
         if best is None or result.selection > best[1].selection:
             best = (model, result)
     assert best is not None
+    # extra sentence check on RAID spliced docs, reported only, not used to select
     dev_spliced = features / "dev-spliced.parquet"
     raid_sent = None
     if dev_spliced.exists():
@@ -249,6 +272,7 @@ def _train(args: argparse.Namespace) -> int:
 
 
 def _sweep_report(results: list[Any], path: Path, raid_sent: float | None) -> None:
+    """every config tried, best first"""
     import orjson
 
     report = {
@@ -260,6 +284,7 @@ def _sweep_report(results: list[Any], path: Path, raid_sent: float | None) -> No
 
 
 def _calibration_slice(features: Path, std: Any, validation: bool) -> Any:
+    """seqxgpt-calib split by group into the selection slice or the calibration set"""
     from aivhuman.evaluate import load_manifest
     from aivhuman.mil.data import in_sentence_validation, load_bags
 
@@ -270,6 +295,7 @@ def _calibration_slice(features: Path, std: Any, validation: bool) -> Any:
 
 
 def _predict(args: argparse.Namespace) -> int:
+    """score every non train split, writes data/predictions/{run}/{split}.parquet"""
     from aivhuman.mil import predict, train
 
     features, predictions, checkpoint, _ = _dirs(args.smoke, args.run)
@@ -284,6 +310,7 @@ def _predict(args: argparse.Namespace) -> int:
 
 
 def _evaluate(args: argparse.Namespace) -> int:
+    """TPR@1%FPR and AUROC per model per eval split"""
     from aivhuman import evaluate as ev
 
     splits = ev.load_splits(config.PROCESSED_DIR, config.MANIFESTS_DIR, ev.EVAL_SPLITS)
@@ -308,6 +335,7 @@ def _sentence_splits(features: Path, model: Any, std: Any) -> tuple[Any, Any, An
     calib_path = features / "seqxgpt-calib.parquet"
     calib_groups = load_manifest(config.MANIFESTS_DIR, "seqxgpt-calib")
     doc_ids = sorted(set(pq.read_table(calib_path, columns=["doc_id"])["doc_id"].to_pylist()))
+    # leave out the selection slice so calibration never sees it
     in_val = in_sentence_validation(doc_ids, calib_groups)
     keep = [d for d, v in zip(doc_ids, in_val, strict=True) if not v]
     fit = calibrate.load_spans(
@@ -331,6 +359,7 @@ def _sentence_splits(features: Path, model: Any, std: Any) -> tuple[Any, Any, An
 
 
 def _calibrate(args: argparse.Namespace) -> int:
+    """fit the calibrator next to the checkpoint, report ECE per length bucket"""
     from aivhuman.mil import calibrate, train
 
     features, _, checkpoint, _ = _dirs(args.smoke, args.run)
@@ -344,6 +373,7 @@ def _calibrate(args: argparse.Namespace) -> int:
 
     splits = [test] if dev_spliced is None else [test, dev_spliced]
     cells = [c for s in splits for c in calibrate.evaluate(cal, s)]
+    # how many short sentences the cap actually changed
     short = calibrate.bucket_of(test.n_tokens, cal.edges) == 0
     logits, n = test.logits[short], test.n_tokens[short]
     moved = int((cal.apply(logits, n) != cal.apply(logits, n, cap=False)).sum())
@@ -355,6 +385,7 @@ def _calibrate(args: argparse.Namespace) -> int:
 
 
 def _report(args: argparse.Namespace) -> int:
+    """doc metrics for the run + baselines, sentence operating points, calibration"""
     import pyarrow.parquet as pq
 
     from aivhuman import evaluate as ev
@@ -367,6 +398,7 @@ def _report(args: argparse.Namespace) -> int:
     cal = calibrate.Calibrator.load(checkpoint.parent / "calibrator.json")
 
     splits = ev.load_splits(config.PROCESSED_DIR, config.MANIFESTS_DIR, report.DOC_SPLITS)
+    # some mage-para rows are paraphraser commentary not paraphrases, drop + count them
     splits["mage-para"], commentary = ev.drop_commentary(splits["mage-para"])
     doc_metrics = []
     for name in [run, *args.baselines]:
@@ -375,12 +407,14 @@ def _report(args: argparse.Namespace) -> int:
             if not path.exists():
                 continue
             preds = ev.read_predictions(path)
+            # smoke preds only cover a sample
             if args.smoke:
                 docs = [d for d in docs if d.doc_id in preds]
             doc_metrics.append(ev.compute_metrics(name, split, docs, preds))
             print(f"  scored {name} {split}", flush=True)
 
     calib, test, dev_spliced = _sentence_splits(features, model, std)
+    # thresholds fit on calib, measured on test, so test FPR is an outcome not a target
     calib_probs = cal.apply(calib.logits, calib.n_tokens)
     thresholds = {"p = 0.5": sentences.EVEN_THRESHOLD} | {
         f"FPR {f:.0%}": sentences.threshold_at_fpr(calib.labels, calib_probs, f)
@@ -389,6 +423,7 @@ def _report(args: argparse.Namespace) -> int:
     test_probs = cal.apply(test.logits, test.n_tokens)
     sent = sentences.evaluate(test, test_probs, thresholds, cal.edges)
     sentences.plot_pr(test, test_probs, sent, cal.edges, out_dir / "pr_curves.png")
+    # sentences holding the human/machine boundary, left out of sentence metrics
     straddles = pq.read_table(features / "seqxgpt-test.parquet", columns=["straddles"])
     straddling = int(straddles["straddles"].to_numpy(zero_copy_only=False).sum())
 
@@ -406,6 +441,7 @@ def _report(args: argparse.Namespace) -> int:
 
 
 def _cluster(args: argparse.Namespace) -> int:
+    """cluster the machine sentences of a split, writes clusters.json"""
     import orjson
 
     from aivhuman.mil import cluster, train
@@ -429,9 +465,11 @@ def _cluster(args: argparse.Namespace) -> int:
 
 
 def _score(args: argparse.Namespace) -> int:
+    """score raw text, print per sentence probabilities + top contributions"""
     from aivhuman.mil.infer import Scorer
 
     text = args.file.read_text(encoding="utf-8") if args.file else args.text
+    # thresholds and error rates shown to the user come from evaluation.json
     scorer = Scorer(
         config.CHECKPOINTS_DIR / args.run / "model.pt",
         config.EVALUATION_REPORT_DIR / "evaluation.json",
@@ -454,6 +492,7 @@ def _score(args: argparse.Namespace) -> int:
 
 
 def _splice_group(doc_id: str) -> str:
+    # spliced ids are "{parent}:splice{k}", group by the parent
     return doc_id.rsplit(":splice", 1)[0]
 
 

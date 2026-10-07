@@ -1,5 +1,7 @@
-# is k means on the standardised sentence features (machine only)
-# label hidden (but used afterward)  i.e where human sentences land
+"""k-means over the machine sentences of one split, labels never seen by the fit"""
+
+# k means on the standardised sentence features (machine only)
+# label hidden (but used afterward) i.e where human sentences land
 # described from where features deviate
 
 from collections import Counter
@@ -19,14 +21,16 @@ from aivhuman.mil.data import Standardizer
 from aivhuman.mil.model import MILModel
 
 K_RANGE: Final = range(3, 9)
-FIT_SAMPLE: Final = 200_000
-SILHOUETTE_SAMPLE: Final = 20_000
+FIT_SAMPLE: Final = 200_000  # sample for picking k, the final fit uses every sentence
+SILHOUETTE_SAMPLE: Final = 20_000  # silhouette is O(n^2)
 TOP_FEATURES: Final = 3
 EXAMPLES: Final = 3
 SEED: Final = 0
 
 
 class Cluster(BaseModel):
+    """what one cluster looks like, all shares rounded to 3dp"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     index: int
@@ -42,6 +46,8 @@ class Cluster(BaseModel):
 
 
 class ClusterReport(BaseModel):
+    """written to json by the cluster cli"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     split: str
@@ -53,17 +59,20 @@ class ClusterReport(BaseModel):
 
 
 def choose_k(z: np.ndarray, rng: np.random.Generator) -> tuple[int, dict[int, float]]:
+    """k with the best silhouette over K_RANGE"""
     fit = z[rng.choice(len(z), min(FIT_SAMPLE, len(z)), replace=False)]
     scores: dict[int, float] = {}
     for k in K_RANGE:
         labels = KMeans(k, n_init=4, random_state=SEED).fit_predict(fit)
         idx = rng.choice(len(fit), min(SILHOUETTE_SAMPLE, len(fit)), replace=False)
         scores[k] = float(silhouette_score(fit[idx], labels[idx]))
+    # ties (to 3dp) go to the smaller k
     best = max(scores, key=lambda k: (round(scores[k], 3), -k))
     return best, scores
 
 
 def _shares(values: list[str], top: int = 3) -> dict[str, float]:
+    # share of the most common values, e.g. generators in a cluster
     counts = Counter(values)
     total = sum(counts.values())
     return {name: round(n / total, 3) for name, n in counts.most_common(top)}
@@ -103,6 +112,7 @@ def cluster(
     split: str,
     k: int | None,
 ) -> ClusterReport:
+    """fit on machine sentences, project human ones, describe each cluster"""
     cols = ["doc_id", "span_idx", "label", "domain", "breakdown", *std.names]
     table = pq.read_table(features / f"{split}.parquet", columns=list(dict.fromkeys(cols)))
     machine = table.filter(pc.equal(table["label"], 1))
@@ -120,11 +130,14 @@ def cluster(
         k, scores = choose_k(zm, rng)
     km = KMeans(k, n_init=4, random_state=SEED).fit(zm)
     assign = km.labels_
+    # humans only get assigned to the fitted centroids, they never move them. a cluster that
+    # pulls few human sentences is machine specific, one that pulls them in proportion is genre
     human_assign = km.predict(zh)
     probs = _sentence_probs(model, zm)
     class_mean = zm.mean(axis=0)
 
     # EXAMPLE COLLECTION (nearest to centroid)
+    # take 10x the needed candidates so there is room to skip duplicates below
     dist = np.linalg.norm(zm - km.cluster_centers_[assign], axis=1)
     doc_ids = machine["doc_id"].to_pylist()
     span_idx = machine["span_idx"].to_pylist()
@@ -139,7 +152,7 @@ def cluster(
     )
     picks: dict[int, list[int]] = {}
     for c, rows in nearest.items():
-        seen: set[str] = set()  # set to keep duplcates at bay
+        seen: set[str] = set()  # set to keep duplicates at bay
         picks[c] = []
         for i in rows:  # recipe lines repeat across documents
             t = texts[(doc_ids[i], span_idx[i])].strip().lstrip("-*• ").lower()
@@ -154,6 +167,7 @@ def cluster(
     clusters = []
     for c in range(k):
         members = assign == c
+        # cluster mean minus machine class mean, already in train sds since zm is standardised
         dev = zm[members].mean(axis=0) - class_mean
         order = np.argsort(-np.abs(dev))
         clusters.append(

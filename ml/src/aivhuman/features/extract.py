@@ -22,6 +22,7 @@ _NLP: Any = None
 
 
 def init_worker() -> None:
+    """load spacy once per worker process"""
     global _NLP
     _NLP = syntax.load()
 
@@ -36,11 +37,13 @@ def text_features(job: tuple[str, list[tuple[int, int]]]) -> np.ndarray:
 
 
 def to_table(docs: Sequence[SpanDoc], features: Sequence[np.ndarray]) -> pa.Table:
+    """one row per span: doc metadata repeated per span + the feature columns"""
     n = [len(d.spans) for d in docs]
     stacked = np.vstack(features).astype(np.float32)
     if stacked.shape[1] != len(FEATURE_NAMES):
         raise ValueError(f"{stacked.shape[1]} feature columns, expected {len(FEATURE_NAMES)}")
 
+    # repeat each doc level value once per span in that doc
     def per_span(values: list[Any]) -> list[Any]:
         return [v for v, k in zip(values, n, strict=True) for _ in range(k)]
 
@@ -76,6 +79,7 @@ def extract(
     if not docs:
         raise ValueError(f"no documents for {path.stem}")
     path.parent.mkdir(parents=True, exist_ok=True)
+    # write to .partial and rename at the end so a crashed run never leaves a half file
     partial = path.with_suffix(".parquet.partial")
     writer: pq.ParquetWriter | None = None
     rows, start = 0, time.time()
@@ -83,10 +87,12 @@ def extract(
         for lo in range(0, len(docs), chunk):
             batch = docs[lo : lo + chunk]
             jobs = [(d.text, d.spans) for d in batch]
+            # spacy + lexical run on the pool while the gpu scores the same batch
             pending = pool.map_async(text_features, jobs, chunksize=64) if pool else None
             ids, offsets = ref.encode([d.text for d in batch])
             scores = ref.token_scores(ids)
             text_feats = pending.get() if pending else [text_features(j) for j in jobs]
+            # column order: lm (6), lexical + syntax (18), length (1) = FEATURE_NAMES
             feats = [
                 np.hstack(
                     [

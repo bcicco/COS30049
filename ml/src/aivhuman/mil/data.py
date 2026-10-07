@@ -40,6 +40,8 @@ class Standardizer(BaseModel):
 
 
 class Bags(BaseModel):
+    """all sentences flat in x, bags are slices of it (ragged, no padding)"""
+
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     doc_ids: list[str]
@@ -47,7 +49,7 @@ class Bags(BaseModel):
     x: np.ndarray  # [n_spans, n_features], raw until standardised
     offsets: np.ndarray  # bag i = rows offsets[i]:offsets[i+1]
     span_labels: np.ndarray  # -1 = unknown
-    straddles: np.ndarray
+    straddles: np.ndarray  # seqxgpt span contains the human/machine boundary
 
     def __len__(self) -> int:
         return len(self.doc_ids)
@@ -60,6 +62,7 @@ class Bags(BaseModel):
         return self.model_copy(update={"x": std.transform(self.x)})
 
     def subset(self, keep: np.ndarray) -> "Bags":
+        # keep = bool mask over bags, rows and offsets rebuilt to match
         idx = np.flatnonzero(keep)
         rows = np.concatenate([np.arange(self.offsets[i], self.offsets[i + 1]) for i in idx])
         return Bags(
@@ -95,9 +98,11 @@ def in_sentence_validation(doc_ids: Sequence[str], groups: dict[str, str]) -> np
 def load_bags(path: Path, names: Sequence[str], keep: Collection[str] | None = None) -> Bags:
     """read features, optionally just the docs in keep"""
     cols = ["doc_id", "span_idx", "label", "span_label", "straddles", *names]
+    # filter in pyarrow so unwanted rows never get loaded
     filters = [("doc_id", "in", list(keep))] if keep is not None else None
     table = pq.read_table(path, columns=cols, filters=filters)
     doc_col = table["doc_id"].to_numpy(zero_copy_only=False)
+    # bag starts are where doc_id changes. needs each doc's rows contiguous + in order
     starts = np.flatnonzero(np.r_[True, doc_col[1:] != doc_col[:-1]])
     span_idx = table["span_idx"].to_numpy()
     if (span_idx[starts] != 0).any() or len(set(doc_col[starts])) != len(starts):
@@ -117,6 +122,7 @@ def batches(
     bags: Bags, order: Sequence[int], batch_size: int
 ) -> Iterator[tuple[list[int], torch.Tensor, torch.Tensor]]:
     # (idx, x [B,S,F], mask [B,S]), padded per batch
+    # length bucketed like the encoder so docs of similar sentence count share a batch
     sizes = bags.sizes
     for batch in _batches(list(order), sizes.tolist(), batch_size):
         width = int(sizes[batch].max())

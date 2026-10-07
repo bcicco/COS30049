@@ -22,18 +22,23 @@ PREFIX_CHARS: Final = 200
 # shorter keys are too generic to id a doc
 MIN_PREFIX_CHARS: Final = 16
 
+# a key must be at least this long before longer keys can be merged into it
 MIN_LINK_CHARS: Final = 24
 
 
 def raid_group_id(source_id: str) -> str:
+    """RAID generations share the source_id of the human doc they came from"""
     return f"raid:{source_id}"
 
 
 def mage_group_id(text: str) -> str:
+    """no link in MAGE, each doc is its own group keyed on its text hash"""
     return f"mage:{stable_hash(text_key(text))}"
 
 
 class GroupStats(BaseModel):
+    """how well the seqxgpt group recovery went"""
+
     model_config = ConfigDict(extra="forbid")
 
     n_records: int = 0
@@ -71,6 +76,8 @@ class GroupStats(BaseModel):
 
 
 class GroupAssignment(BaseModel):
+    """one group id per input record, same order"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     group_ids: list[str]
@@ -88,11 +95,15 @@ def recover_seqxgpt_groups(
     # SeqXGPT records have no id --> row indices dont line up across
     # files AND prompt_len changes by generator for the same base.
 
+    # so: key each record on a normalised slice of its human prefix, then union keys where
+    # one is a prefix of another (short prompt in one file, longer prompt in another)
+
     n = len(records)
     stats = GroupStats(n_records=n, prefix_chars=prefix_chars)
     if n == 0:
         return GroupAssignment(group_ids=[], stats=stats)
 
+    # never read past the human prefix, the machine text differs per generator
     keys: list[str] = []
     for _stem, text, prompt_len in records:
         budget = len(text) if prompt_len is None else prompt_len
@@ -134,6 +145,8 @@ def recover_seqxgpt_groups(
     for idx, root in enumerate(roots):
         final[root].append(idx)
 
+    # sanity stats: a real group spans several generator files, two records from the same
+    # file in one group means two different base docs got merged
     multi_file = 0
     for idxs in final.values():
         stems = Counter(records[i][0] for i in idxs)

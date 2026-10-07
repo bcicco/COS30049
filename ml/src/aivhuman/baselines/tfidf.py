@@ -18,6 +18,7 @@ N_FEATURES: Final = 2**21  # 2^21
 
 
 def _vectorizer() -> HashingVectorizer:
+    # word uni + bigrams, raw counts. tf-idf weighting is done after
     return HashingVectorizer(
         ngram_range=(1, 2),
         n_features=N_FEATURES,
@@ -45,6 +46,7 @@ def run(
     x_dev = features(splits["dev"])
     y_dev = np.array([d.label for d in splits["dev"]])
 
+    # class_weight balanced since RAID is ~34:1 machine
     grid: dict[float, float] = {}
     best, best_tpr = None, -1.0
     for c in c_grid:

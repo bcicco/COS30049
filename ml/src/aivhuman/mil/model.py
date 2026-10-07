@@ -9,13 +9,15 @@ from torch import nn
 
 
 class MILConfig(BaseModel):
+    """head, pooling and training settings"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     head: Literal["linear", "gam"] = "linear"
     n_knots: int = 8  # gam only
     pooling: Literal["lse", "topk"] = "lse"
-    tau: float = 2.0
-    k: int = 3
+    tau: float = 2.0  # lse temp, low -> max, high -> mean
+    k: int = 3  # topk only
     sentence_weight: float = 0.0  # sentence bce, only spliced docs have span labels
     l1: float = 1e-4
     lr: float = 1e-4
@@ -33,6 +35,7 @@ def pool_lse(logits: torch.Tensor, mask: torch.Tensor, tau: float) -> torch.Tens
 
 
 def pool_topk(logits: torch.Tensor, mask: torch.Tensor, k: int) -> torch.Tensor:
+    # mean of the k highest sentence logits, short bags use what they have
     kk = min(k, logits.shape[1])
     top = logits.masked_fill(~mask, -math.inf).topk(kk, dim=1).values
     count = mask.sum(1).clamp(min=1, max=kk)
@@ -40,11 +43,14 @@ def pool_topk(logits: torch.Tensor, mask: torch.Tensor, k: int) -> torch.Tensor:
 
 
 def coverage(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    # mean sentence p(machine), not used in the loss
     probs = torch.sigmoid(logits) * mask
     return probs.sum(1) / mask.sum(1).clamp(min=1)
 
 
 class SplineHead(nn.Module):
+    """additive head, one piecewise linear curve per feature"""
+
     # term_f(z) = a_f z + sum_j b_fj (relu(z - k_fj) - relu(-k_fj))
     # centred so z = 0 gives 0
 
@@ -57,6 +63,7 @@ class SplineHead(nn.Module):
         self.register_buffer("knots", torch.zeros(n_features, n_knots))
 
     def terms(self, x: torch.Tensor) -> torch.Tensor:
+        # [..., n_features] per feature contribution to the logit
         hinges = torch.relu(x.unsqueeze(-1) - self.knots) - torch.relu(-self.knots)
         return x * self.linear + (hinges * self.hinge).sum(-1)
 
@@ -65,6 +72,8 @@ class SplineHead(nn.Module):
 
 
 class MILModel(nn.Module):
+    """shared sentence head + pooling. only the doc logit goes into the loss"""
+
     def __init__(self, n_features: int, cfg: MILConfig) -> None:
         super().__init__()
         self.cfg = cfg
@@ -78,6 +87,7 @@ class MILModel(nn.Module):
         return f"mil-{self.cfg.head}"
 
     def set_knots(self, x: torch.Tensor) -> None:
+        # knots at evenly spaced train quantiles (10%..90%) of each feature
         if isinstance(self.head, SplineHead):
             q = torch.linspace(0.1, 0.9, self.cfg.n_knots)
             self.head.knots.copy_(torch.quantile(x, q, dim=0).T)
@@ -108,6 +118,7 @@ class MILModel(nn.Module):
         return float(self.head.bias.item())
 
     def l1_penalty(self) -> torch.Tensor:
+        # pushes unused features / kinks to zero, keeps the curves readable
         if isinstance(self.head, SplineHead):
             return self.head.linear.abs().sum() + self.head.hinge.abs().sum()
         return self.head.weight.abs().sum()

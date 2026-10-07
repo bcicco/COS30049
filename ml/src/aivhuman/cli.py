@@ -32,6 +32,7 @@ PEEK_SEED = 20240501
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """entry point for aivhuman-data"""
     config.configure_stdio()
     parser = _parser()
     args = parser.parse_args(argv)
@@ -47,24 +48,29 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="aivhuman-data", description=__doc__)
     subparsers = parser.add_subparsers()
 
+    # download raw corpora into data/raw
     p = subparsers.add_parser("acquire")
     p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "daigt", "all"], default="all")
     p.set_defaults(handler=_acquire)
 
+    # stream the raid csv into parquet (clean rows + one partition per attack)
     p = subparsers.add_parser("derive")
     p.add_argument("--no-attacks", action="store_true")
     p.set_defaults(handler=_derive)
 
+    # print sample rows from each source to sanity check label polarity
     p = subparsers.add_parser("peek")
     p.add_argument("--rows", type=int, default=PEEK_ROWS)
     p.add_argument("--chars", type=int, default=160)
     p.set_defaults(handler=_peek)
 
+    # normalise + segment each source into data/processed/*.jsonl
     p = subparsers.add_parser("ingest")
     p.add_argument("--source", choices=["raid", "mage", "seqxgpt", "daigt", "all"], default="all")
     p.add_argument("--workers", type=int, default=None)
     p.set_defaults(handler=_ingest)
 
+    # re-check offsets and labels of every processed doc
     p = subparsers.add_parser("verify")
     p.set_defaults(handler=_verify)
 
@@ -72,18 +78,21 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--skip-verify", action="store_true")
     p.set_defaults(handler=_report)
 
+    # assign groups to splits, writes manifests/
     p = subparsers.add_parser("split")
     p.set_defaults(handler=_split)
 
+    # ingest attacked raid docs whose clean parent is in a split
     p = subparsers.add_parser("attacks")
     p.add_argument("--workers", type=int, default=None)
-    p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--limit", type=int, default=None)  # small smoke run into data/interim
     p.set_defaults(handler=_attacks)
 
     return parser
 
 
 def _acquire(args: argparse.Namespace) -> int:
+    """fetch the requested sources and print what landed on disk"""
     config.ensure_dirs()
     wanted = ["raid", "mage", "seqxgpt", "daigt"] if args.source == "all" else [args.source]
     fetchers: dict[str, Callable[[], list[Path]]] = {
@@ -100,6 +109,7 @@ def _acquire(args: argparse.Namespace) -> int:
 
 
 def _derive(args: argparse.Namespace) -> int:
+    """raid csv -> parquet in data/interim/raid"""
     config.ensure_dirs()
     out = config.INTERIM_DIR / "raid"
     stats = derive(
@@ -176,10 +186,12 @@ def _peek(args: argparse.Namespace) -> int:
 
 
 def _ingest(args: argparse.Namespace) -> int:
+    """normalise and segment each source, one jsonl per corpus + a stats sidecar"""
     config.ensure_dirs()
 
     wanted = ["seqxgpt", "mage", "raid", "daigt"] if args.source == "all" else [args.source]
     out = config.PROCESSED_DIR
+    # raid reads the derived parquet, the others read the raw downloads
     for name in wanted:
         if name == "seqxgpt":
             result = ingest_seqxgpt(
@@ -208,6 +220,7 @@ def _ingest(args: argparse.Namespace) -> int:
                 workers=args.workers,
                 progress=True,
             )
+        # segment stats saved next to the corpus, green = no text left outside a span
         write_sidecar(result, out)
         rate = result.docs / result.elapsed_s if result.elapsed_s else 0.0
         print(
@@ -222,6 +235,7 @@ def _ingest(args: argparse.Namespace) -> int:
 
 
 def _verify(_args: argparse.Namespace) -> int:
+    """re-validate processed docs, non zero exit if anything fails"""
     reports = verify_mod.verify_all(config.PROCESSED_DIR)
     if not reports:
         print(f"nothing to verify in {config.PROCESSED_DIR}", file=sys.stderr)
@@ -242,6 +256,7 @@ def _verify(_args: argparse.Namespace) -> int:
 
 
 def _report(args: argparse.Namespace) -> int:
+    """dataset summary (counts, balance, segment health) into reports/"""
     verify_data: list[dict[str, Any]] | None = None
     if not args.skip_verify:
         verify_data = [r.as_dict() for r in verify_mod.verify_all(config.PROCESSED_DIR)]
@@ -251,6 +266,7 @@ def _report(args: argparse.Namespace) -> int:
 
 
 def _split(_args: argparse.Namespace) -> int:
+    """build group disjoint split manifests and print their sizes"""
     stats = splits_mod.build(config.PROCESSED_DIR, config.MANIFESTS_DIR, config.SPLITS_REPORT)
     for name, n in stats.docs.items():
         print(
@@ -264,9 +280,11 @@ def _split(_args: argparse.Namespace) -> int:
 
 
 def _attacks(args: argparse.Namespace) -> int:
+    """ingest attacked raid docs and write their manifests"""
     from aivhuman.evaluate import load_manifest
     from aivhuman.sources import raid_attacks
 
+    # attacked docs inherit the group of their clean parent, so they stay in the same split
     groups = {
         parent: load_manifest(config.MANIFESTS_DIR, parent)
         for parent in raid_attacks.ADV_PARENT.values()
@@ -277,6 +295,7 @@ def _attacks(args: argparse.Namespace) -> int:
     manifest_dir = smoke if args.limit else config.MANIFESTS_DIR / "attacks"
     manifests: dict[str, dict[str, str]] = {adv: {} for adv in raid_attacks.ADV_PARENT}
 
+    # records each row into its manifest as it streams past into ingest
     def tapped() -> Any:
         for row in raid_attacks.load_rows(config.INTERIM_DIR / "raid" / "by_attack", wanted):
             adv, group = wanted[(row.adv_source_id, row.attack)]
@@ -291,6 +310,7 @@ def _attacks(args: argparse.Namespace) -> int:
         path = manifest_dir / f"{adv}.json"
         path.write_bytes(orjson.dumps(dict(sorted(manifest.items())), option=orjson.OPT_INDENT_2))
         print(f"{adv:>13}: {len(manifest):>7,} docs  -> {path}")
+    # requested (source, attack) pairs that raid doesnt actually have
     missing = len(wanted) - sum(len(m) for m in manifests.values())
     print(
         f"{result.docs:,} docs in {result.elapsed_s / 60:.1f} min; "
@@ -306,6 +326,7 @@ def _stratified(
     default_quota: int,
     rng: random.Random,
 ) -> dict[str, list[Any]]:
+    """reservoir sample with a fixed quota per category, rest goes to _other"""
     # one pass, a reservoir per category
     reservoirs: dict[str, list[Any]] = {name: [] for name in quotas}
     reservoirs["_other"] = []
@@ -333,6 +354,7 @@ def _stratified(
 
 
 def _reservoir(rows: Any, k: int, rng: random.Random) -> list[Any]:
+    """uniform sample of k rows in one pass (algorithm R)"""
     out: list[Any] = []
     for i, row in enumerate(rows):
         if i < k:
@@ -346,6 +368,7 @@ def _reservoir(rows: Any, k: int, rng: random.Random) -> list[Any]:
 
 
 def _clip(text: str, limit: int) -> str:
+    # collapse whitespace so one row prints on one line
     flat = " ".join(text.split())
     return flat if len(flat) <= limit else f"{flat[:limit]}..."
 

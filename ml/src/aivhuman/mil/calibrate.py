@@ -17,7 +17,10 @@ from aivhuman.mil.data import Standardizer, load_bags
 from aivhuman.mil.model import MILModel
 from aivhuman.mil.train import score
 
+# separate fit per length bucket, the raw logit means different things for 8 vs 60 tokens
 EDGES: Final = (15, 30, 60)  # <15, 15-30, 30-60, 60+
+# short sentences carry too little signal to show a confident score, so <15 never gets
+# past the 1% fpr threshold
 SHORT_CAP: Final = 0.75  # clip shortest bucket to [1-cap, cap]
 BINS: Final = 10
 ECE_TARGET: Final = 0.05
@@ -25,6 +28,7 @@ MIN_CELL_SPANS: Final = 200
 
 
 def bucket_of(n_tokens: np.ndarray, edges: Sequence[int] = EDGES) -> np.ndarray:
+    # bucket index per sentence, 0 = shortest
     return np.searchsorted(np.asarray(edges), n_tokens, side="right")
 
 
@@ -47,13 +51,15 @@ def shift_prior(probs: np.ndarray, prior: float) -> np.ndarray:
 
 
 class Calibrator(BaseModel):
+    """one isotonic curve per length bucket, stored as its knots so it saves to json"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     edges: list[int]
     short_cap: float
-    x: list[list[float]]
-    y: list[list[float]]
-    n_fit: list[int]
+    x: list[list[float]]  # per bucket isotonic thresholds (logit)
+    y: list[list[float]]  # per bucket isotonic values (prob)
+    n_fit: list[int]  # spans each bucket was fit on
 
     @classmethod
     def fit(
@@ -70,6 +76,7 @@ class Calibrator(BaseModel):
             m = buckets == k
             if len(np.unique(labels[m])) != 2:
                 raise ValueError(f"bucket {k} needs both classes to fit")
+            # isotonic keeps the ranking (monotone), balanced weights = even prior
             iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
             iso.fit(logits[m], labels[m], sample_weight=balanced_weights(labels[m]))
             xs.append(iso.X_thresholds_.tolist())
@@ -78,6 +85,7 @@ class Calibrator(BaseModel):
         return cls(edges=list(edges), short_cap=short_cap, x=xs, y=ys, n_fit=ns)
 
     def apply(self, logits: np.ndarray, n_tokens: np.ndarray, cap: bool = True) -> np.ndarray:
+        """logits -> calibrated p(machine), cap=False skips the short cap (eval only)"""
         buckets = bucket_of(n_tokens, self.edges)
         probs = np.empty(len(logits), dtype=np.float64)
         for k, (x, y) in enumerate(zip(self.x, self.y, strict=True)):
@@ -111,6 +119,7 @@ def reliability(
 
 
 def ece(labels: np.ndarray, probs: np.ndarray, balanced: bool = True, bins: int = BINS) -> float:
+    # expected calibration error, weighted mean |pred - obs| over bins
     pred, obs, share = reliability(labels, probs, balanced, bins)
     ok = share > 0
     return float(np.sum(share[ok] * np.abs(pred[ok] - obs[ok])))
@@ -137,6 +146,7 @@ def load_spans(
     group_of: Callable[[str], str],
     keep: Collection[str] | None = None,
 ) -> Spans:
+    """score a split and keep its labelled sentences with their token counts"""
     bags = load_bags(path, std.names, keep).standardised(std)
     logits = score(model, bags).sentence_logits
     filters = [("doc_id", "in", list(keep))] if keep is not None else None
@@ -145,6 +155,7 @@ def load_spans(
     if not (meta["doc_id"].to_numpy(zero_copy_only=False) == doc_ids).all():
         raise ValueError(f"{path}: span metadata is not aligned with the bags")
     rows, labels = bags.sentence_labels()
+    # position of each span inside its doc
     span_idx = np.arange(len(doc_ids)) - np.repeat(bags.offsets[:-1], bags.sizes)
     return Spans(
         name=name,
@@ -158,6 +169,8 @@ def load_spans(
 
 
 class CellMetrics(BaseModel):
+    """calibration metrics for one (split, length bucket) cell"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     split: str
@@ -176,12 +189,14 @@ class CellMetrics(BaseModel):
 
 
 def _cell(cal: Calibrator, spans: Spans, m: np.ndarray, bucket: str) -> CellMetrics | None:
+    # None if the cell is too small or one class only
     y = spans.labels[m]
     if len(y) < MIN_CELL_SPANS or y.min() == y.max():
         return None
     logits, n = spans.logits[m], spans.n_tokens[m]
     probs = cal.apply(logits, n)
     prior = float(y.mean())
+    # ci resamples whole groups so related docs move together
     (interval,) = bootstrap_ci(y, probs, spans.groups[m], [ece])
     pred, obs, share = reliability(y, probs)
     return CellMetrics(
@@ -202,6 +217,7 @@ def _cell(cal: Calibrator, spans: Spans, m: np.ndarray, bucket: str) -> CellMetr
 
 
 def evaluate(cal: Calibrator, spans: Spans) -> list[CellMetrics]:
+    """metrics per length bucket plus an "all" cell"""
     buckets = bucket_of(spans.n_tokens, cal.edges)
     names = bucket_names(cal.edges)
     masks = [(names[k], buckets == k) for k in range(len(names))]

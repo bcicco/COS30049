@@ -58,6 +58,8 @@ _COMPRESSION: Final = "zstd"
 
 
 class RaidDeriveStats(BaseModel):
+    """row counts from the csv -> parquet pass"""
+
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     rows: NonNegativeInt = 0
@@ -128,6 +130,7 @@ def derive(
             _tally(st.by_attack, batch, "attack")
             out = _transform(batch)
 
+            # every attack (incl. none) gets its own partition, read back by raid_attacks.py
             if include_attacks:
                 for attack in _attack_values(batch):
                     part = out.filter(pc.equal(batch.column("attack"), attack))
@@ -139,6 +142,7 @@ def derive(
                         attack_writers[attack] = writer
                     writer.write_batch(part)
 
+            # clean subset (attack == none) is what ingest reads
             clean = out.filter(pc.equal(batch.column("attack"), CLEAN_ATTACK))
             if clean.num_rows:
                 st.clean_rows += clean.num_rows
@@ -164,6 +168,7 @@ def derive(
             if limit_blocks is not None and st.blocks >= limit_blocks:
                 break
 
+        # flush whatever is left from the last few blocks
         if buffered:
             if clean_writer is None:
                 clean_writer = pq.ParquetWriter(
@@ -182,6 +187,7 @@ def derive(
 
 
 def open_clean(path: Path) -> pq.ParquetFile:
+    """open the clean parquet, fails if the columns dont match"""
     # check its actually the file we think it is
     handle = pq.ParquetFile(path)
     names = list(handle.schema_arrow.names)
@@ -191,6 +197,8 @@ def open_clean(path: Path) -> pq.ParquetFile:
 
 
 def _read_batches(csv_path: Path, block_size: int) -> Iterator[pa.RecordBatch]:
+    # streaming reader, all cols as strings so pyarrow doesnt guess types per block
+    # newlines_in_values bc generations contain newlines
     reader = pacsv.open_csv(
         csv_path,
         read_options=pacsv.ReadOptions(block_size=block_size),

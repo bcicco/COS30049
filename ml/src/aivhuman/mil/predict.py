@@ -1,3 +1,5 @@
+"""score prepared splits with a trained mil model"""
+
 from pathlib import Path
 
 import numpy as np
@@ -19,10 +21,12 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
 def predict_split(
     model: MILModel, std: Standardizer, features: Path, out: Path, split: str
 ) -> None:
+    """doc probs, coverage and per sentence logits for one split"""
     bags = load_bags(features, std.names).standardised(std)
     s = score(model, bags)
     write_predictions(out / f"{split}.parquet", bags.doc_ids, _sigmoid(s.doc_logits))
     write_predictions(out / f"{split}.coverage.parquet", bags.doc_ids, s.coverage)
+    # sentence logits are flat, rebuild (doc_id, span_idx) from bag sizes
     sizes = bags.sizes
     pq.write_table(
         pa.table(
@@ -39,6 +43,7 @@ def predict_split(
 def explain(
     model: MILModel, std: Standardizer, x: np.ndarray, top: int = 3
 ) -> list[list[tuple[str, float]]]:
+    """top features by abs contribution per sentence, signed (+ = machine)"""
     # x is raw, gets standardised here
     with torch.no_grad():
         contrib = model.contributions(torch.from_numpy(std.transform(x))).numpy()
@@ -53,6 +58,7 @@ def weights_report(model: MILModel, std: Standardizer, result: RunResult, path: 
     """contribution per feature on a small z grid, biggest effect first"""
     grid = (-2.0, -1.0, 1.0, 2.0)
     n = len(std.names)
+    # one feature at z, rest at 0 (the mean), so each term is read off the diagonal
     with torch.no_grad():
         terms = np.stack(
             [model.contributions(torch.eye(n) * z).diagonal().numpy() for z in grid], axis=1

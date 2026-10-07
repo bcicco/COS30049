@@ -21,6 +21,7 @@ def write(
     cells: list[CellMetrics],
     out_dir: Path,
 ) -> Path:
+    """write the final evaluation json, returns its path"""
     payload = {
         "run": run,
         "documents": [m.model_dump() for m in doc_metrics],

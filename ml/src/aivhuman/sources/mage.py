@@ -24,6 +24,7 @@ _FIELD_SIZE_LIMIT: Final = 2**31 - 1
 
 
 # ood == out of domain, i.e. not in the training set
+# mage is never trained on, so even its own train/valid files are test roles here
 SPLIT_ROLE: Final = {
     "train": "xcorpus_test",
     "valid": "xcorpus_test",
@@ -39,17 +40,21 @@ UNPARSED: Final = "<unparsed>"
 
 
 class RawRow(BaseModel):
+    """one csv row as read, before label mapping"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     split: str
     row_index: NonNegativeInt
     text: str
-    label: str
+    label: str  # raw "0" / "1" string, 1 = human in mage (inverted vs ours)
 
-    src: str
+    src: str  # "{domain}_{generator}" style tag, parsed in labels.parse_src
 
 
 class MageStats(BaseModel):
+    """row counts + label / src checks from a scan, used for the dataset report"""
+
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     rows: NonNegativeInt = 0
@@ -73,6 +78,7 @@ class MageStats(BaseModel):
 
     @property
     def integrity_ok(self) -> bool:
+        # every src parsed, label agrees with the generator, both classes present
         return (
             self.unparsed_src == 0
             and self.label_generator_disagreements == 0
@@ -82,6 +88,7 @@ class MageStats(BaseModel):
 
     @property
     def is_green(self) -> bool:
+        # every row is either a doc or skipped for empty text, nothing lost
         return self.integrity_ok and self.docs + self.empty_text == self.rows
 
     def as_dict(self) -> dict[str, Any]:
@@ -104,6 +111,7 @@ class MageStats(BaseModel):
 
 
 def load_rows(path: Path, split: str) -> Iterator[RawRow]:
+    """stream one mage csv as rows, fails fast if the columns change"""
     csv.field_size_limit(_FIELD_SIZE_LIMIT)
     with path.open(encoding=MAGE_ENCODING, newline="") as fh:
         reader = csv.DictReader(fh)
@@ -120,6 +128,7 @@ def load_rows(path: Path, split: str) -> Iterator[RawRow]:
 
 
 def iter_rows(directory: Path, splits: Sequence[str] | None = None) -> Iterator[RawRow]:
+    """rows from the given splits, all of them by default"""
     for split in splits if splits is not None else list(MAGE_FILES):
         yield from load_rows(directory / MAGE_FILES[split], split)
 
@@ -131,6 +140,7 @@ def build_docs(
     segmenter: Segmenter | None = None,
     stats: MageStats | None = None,
 ) -> Iterator[Doc]:
+    """stream Docs, filling stats as it goes"""
     seg = segmenter or Segmenter()
     st = stats if stats is not None else MageStats()
 
@@ -148,6 +158,7 @@ def scan(
     splits: Sequence[str] | None = None,
     stats: MageStats | None = None,
 ) -> MageStats:
+    """count rows without building docs"""
     st = stats if stats is not None else MageStats()
     for row in iter_rows(directory, splits):
         account(row, st)
@@ -155,6 +166,7 @@ def scan(
 
 
 def account(row: RawRow, st: MageStats) -> None:
+    """add one row to the stats"""
     st.rows += 1
     st.by_split[row.split] = st.by_split.get(row.split, 0) + 1
 
@@ -176,6 +188,7 @@ def account(row: RawRow, st: MageStats) -> None:
         ):
             st.unparsed_examples.append(row.src)
 
+    # para rows are checked separately, the para file mixes in unparaphrased originals
     if parsed.is_paraphrased:
         st.para_rows += 1
         if generator == "human":
@@ -195,7 +208,9 @@ def account(row: RawRow, st: MageStats) -> None:
 
 
 def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
+    """normalise + segment one row into a Doc, None if the text is empty"""
     # pure so it can run in a worker
+    # mage_label flips mage's 1 = human to our 1 = machine
     label = mage_label(row.label)
     parsed = parse_src(row.src)
     domain, generator = (parsed.domain, parsed.generator) if parsed.ok else (None, None)
@@ -214,6 +229,7 @@ def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
         source="mage",
         domain=domain,
         generator=generator,
+        # no human -> machine link in mage, so each doc is its own group (text hash)
         group_id=mage_group_id(text),
         split_role=SPLIT_ROLE[row.split],
         sentences=[

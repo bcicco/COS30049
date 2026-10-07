@@ -14,6 +14,7 @@ ML_ROOT: Final = Path(__file__).resolve().parents[2]  # two levels up from ml/sr
 
 load_dotenv(ML_ROOT / ".env")
 
+# data can live on another drive, set AIVHUMAN_DATA_ROOT in .env
 DATA_ROOT: Final = Path(os.environ.get("AIVHUMAN_DATA_ROOT") or ML_ROOT / "data").resolve()
 RAW_DIR: Final = DATA_ROOT / "raw"
 INTERIM_DIR: Final = DATA_ROOT / "interim"
@@ -34,6 +35,7 @@ EVALUATION_REPORT_DIR: Final = ML_ROOT / "reports" / "phase7"
 
 
 def configure_stdio() -> None:
+    """force utf-8 on stdout / stderr, windows consoles default to cp1252"""
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
@@ -41,6 +43,7 @@ def configure_stdio() -> None:
 
 
 def ensure_dirs() -> None:
+    """make the data dirs the pipeline writes to"""
     for path in (
         RAW_DIR,
         INTERIM_DIR,
@@ -53,6 +56,7 @@ def ensure_dirs() -> None:
 
 
 def workers() -> int:
+    """worker processes for ingest, AIVHUMAN_WORKERS overrides"""
     # leaves 2 cores free for the OS + writer
     # NOTE: Reconfigure this as you want, this is what works best for me on my 8-core but may
     # need adjusting on your machine.

@@ -1,3 +1,5 @@
+"""load processed docs w/ their sentence spans"""
+
 import random
 from pathlib import Path
 from typing import Final
@@ -12,19 +14,22 @@ from aivhuman.evaluate import (
     sample_per_group,
 )
 
+# RAID has ~34 machine docs per human one, keep 4 so one group doesnt swamp train
 TRAIN_MACHINE_PER_GROUP: Final = 4
 SAMPLE_SEED: Final = 20240501
 
 
 class SpanDoc(EvalDoc):
+    """eval doc + sentence offsets, token counts and seqxgpt sentence labels"""
+
     spans: list[tuple[int, int]]
     span_tokens: list[int]
     span_labels: list[int] | None  # seqxgpt only
-    straddles: list[bool]
+    straddles: list[bool]  # sentence crosses the seqxgpt human/machine boundary
 
 
 def load_span_docs(processed_dir: Path, manifests_dir: Path, split: str) -> list[SpanDoc]:
-    # train gets subsampled per group
+    """docs in a split's manifest. train gets subsampled per group"""
     keep = load_manifest(manifests_dir, split)
     docs = list(_read(processed_dir / f"{SPLIT_SOURCE[split]}.jsonl", keep))
     if split == "train":
@@ -34,6 +39,7 @@ def load_span_docs(processed_dir: Path, manifests_dir: Path, split: str) -> list
 
 
 def _read(path: Path, keep: dict[str, str]) -> list[SpanDoc]:
+    # one json doc per line, skip anything not in the manifest
     out = []
     with path.open("rb") as fh:
         for line in fh:

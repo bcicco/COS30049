@@ -1,4 +1,4 @@
-"""Every label in the project, in one module because it got two confusing and choatic having
+"""Every label in the project, in one module because it got too confusing and chaotic having
 them in different places.
 """
 
@@ -41,6 +41,7 @@ RAID_DOMAINS: Final = frozenset(
 
 
 def raid_label(model: str) -> int:
+    """RAID model col -> 0 / 1, unknown values raise"""
     if model not in RAID_MODELS:
         raise UnknownLabelError(f"RAID model {model!r} not in the known set")
     return LABEL_HUMAN if model == "human" else LABEL_MACHINE
@@ -113,7 +114,7 @@ _MACHINE_SRC_RE = re.compile(
 
 
 def mage_label(raw: str) -> int:
-    # MAGE has 1 = human, flip to ours
+    """MAGE label string -> 0 / 1, MAGE has 1 = human so this flips it to ours"""
     try:
         return _MAGE_LABELS[raw.strip()]
     except KeyError:
@@ -121,6 +122,8 @@ def mage_label(raw: str) -> int:
 
 
 class ParsedSrc(NamedTuple):
+    """MAGE src field split up, ok = every part is a known value"""
+
     domain: str | None
     generator: str | None
     strategy: str | None
@@ -151,7 +154,7 @@ def parse_src(src: str) -> ParsedSrc:
         domain = core[: -len("_human")]
         return ParsedSrc(domain, "human", None, is_para, domain in MAGE_DOMAINS)
 
-    # {domain}_{model}
+    # {domain}_{model}, longest domain first so a short domain cant match a longer one's prefix
     for domain in sorted(MAGE_DOMAINS, key=len, reverse=True):
         prefix = f"{domain}_"
         if core.startswith(prefix):
@@ -168,6 +171,7 @@ SEQXGPT_GENERATORS: Final = frozenset({"gpt2", "gptneo", "gptj", "llama", "gpt3r
 
 
 def seqxgpt_doc_label(raw: str, boundary: int, length: int) -> int:
+    """doc label from the boundary, a doc thats all prompt is human"""
     # boundary is where the human prompt ends.
     if raw not in SEQXGPT_GENERATORS:
         raise UnknownLabelError(f"SeqXGPT label {raw!r} not in the known set")

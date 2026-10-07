@@ -2,8 +2,11 @@
 
 from typing import Final
 
+# predictability under GPT-2 small, mean over the span tokens (lm.py)
 LM_FEATURES: Final = ("lm_logprob", "lm_logrank", "lm_top10", "lm_entropy")
+# span vs the rest of its doc (lm.py)
 CONTEXT_FEATURES: Final = ("ctx_logprob_delta", "ctx_burstiness")
+# word choice + local repetition (lexical.py)
 LEXICAL_FEATURES: Final = (
     "lex_mattr",
     "lex_word_len",
@@ -11,6 +14,7 @@ LEXICAL_FEATURES: Final = (
     "lex_rare_rate",
     "rep_max_cos",
 )
+# spacy universal POS tags, each becomes a share of the span tokens (syntax.py)
 POS_TAGS: Final = (
     "NOUN",
     "VERB",
@@ -36,6 +40,7 @@ FEATURE_NAMES: Final = (
     *LENGTH_FEATURES,
 )  # column order in the feature files, NaN = undefined for that span
 
+# extracted but dropped before training, see vet.py for the checks
 EXCLUDED: Final[frozenset[str]] = frozenset(
     {
         "ctx_burstiness",  # length rho -0.54; dev AUROC 0.42 -> mage-x 0.50

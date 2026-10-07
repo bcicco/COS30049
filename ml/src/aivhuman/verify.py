@@ -28,6 +28,8 @@ MAX_PROBLEMS: Final = 50
 
 
 class VerifyReport(BaseModel):
+    """per file result, problems are capped so a broken file doesnt flood the report"""
+
     model_config = ConfigDict(extra="forbid")
 
     path: Path
@@ -46,6 +48,7 @@ class VerifyReport(BaseModel):
         return self.n_problems == 0
 
     def note(self, message: str) -> None:
+        # always counted, only the first MAX_PROBLEMS are kept
         self.n_problems += 1
         if len(self.problems) < MAX_PROBLEMS:
             self.problems.append(message)
@@ -67,6 +70,7 @@ class VerifyReport(BaseModel):
 
 
 def verify_file(path: Path, *, seen_doc_ids: set[str] | None = None) -> VerifyReport:
+    """check one jsonl, pass seen_doc_ids to catch dupes across files"""
     report = VerifyReport(path=path)
     ids = seen_doc_ids if seen_doc_ids is not None else set()
 
@@ -97,12 +101,13 @@ def verify_file(path: Path, *, seen_doc_ids: set[str] | None = None) -> VerifyRe
 
 
 def verify_all(directory: Path) -> list[VerifyReport]:
-    # shares the doc_id set so dupes across files get caught
+    """verify every jsonl in a dir, shares the doc_id set so dupes across files get caught"""
     seen: set[str] = set()
     return [verify_file(path, seen_doc_ids=seen) for path in sorted(directory.glob("*.jsonl"))]
 
 
 def iter_problems(reports: list[VerifyReport]) -> Iterator[str]:
+    """flatten problems to "file: problem" lines for printing"""
     for report in reports:
         for problem in report.problems:
             yield f"{report.path.name}: {problem}"
@@ -118,6 +123,7 @@ def _check_doc(doc: Doc, report: VerifyReport) -> None:
     if not doc.sentences:
         report.note(f"{doc.doc_id}: no spans, so nothing for MIL to pool")
 
+    # offsets must slice out the exact trimmed sentence
     for i, span in enumerate(doc.sentences):
         sentence = doc.text[span.start : span.end]
         if not sentence:
@@ -139,6 +145,7 @@ def _check_doc(doc: Doc, report: VerifyReport) -> None:
 
 
 def _check_sidecar(path: Path, report: VerifyReport) -> None:
+    # ingest writes {stem}.stats.json next to each file, a short file means a cut off write
     sidecar = path.with_name(f"{path.stem}.stats.json")
     if not sidecar.exists():
         report.note(f"no sidecar at {sidecar.name}; provenance for this file is unknown")

@@ -48,6 +48,8 @@ COMMENTARY: Final = re.compile(r"\b(?:paraphras|rephras)\w*", re.IGNORECASE)
 
 
 class EvalDoc(BaseModel):
+    """a doc as the eval code sees it, no sentence spans"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     doc_id: str
@@ -59,6 +61,8 @@ class EvalDoc(BaseModel):
 
 
 class SplitMetrics(BaseModel):
+    """doc level metrics for one model on one split"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     model: str
@@ -81,18 +85,19 @@ class SplitMetrics(BaseModel):
 
 
 def load_manifest(manifests_dir: Path, split: str) -> dict[str, str]:
-    # doc_id -> group_id
+    """doc_id -> group_id"""
     payload: dict[str, str] = orjson.loads(manifest_path(manifests_dir, split).read_bytes())
     return payload
 
 
 def manifest_path(manifests_dir: Path, split: str) -> Path:
+    """attacked splits sit in a subdir"""
     sub = ATTACK_MANIFESTS if SPLIT_SOURCE[split] == "raid-attacks" else ""
     return manifests_dir / sub / f"{split}.json"
 
 
 def breakdown_name(d: dict[str, Any]) -> str:
-    # e.g. gpt4, human_para, mistral@homoglyph
+    """per doc bucket for the breakdowns, e.g. gpt4, human_para, mistral@homoglyph"""
     name = str(d["generator"] or "human")
     if d["meta"].get("is_paraphrased"):
         name = f"{name}_para"
@@ -103,10 +108,11 @@ def breakdown_name(d: dict[str, Any]) -> str:
 def load_splits(
     processed_dir: Path, manifests_dir: Path, splits: Iterable[str]
 ) -> dict[str, list[EvalDoc]]:
-    # reads each source jsonl once
+    """split -> docs, reads each source jsonl once"""
     wanted = list(splits)
     out: dict[str, list[EvalDoc]] = {s: [] for s in wanted}
     for source in dict.fromkeys(SPLIT_SOURCE[s] for s in wanted):
+        # doc_id -> split for every wanted split that comes from this source
         owner = {
             doc_id: split
             for split in wanted
@@ -119,7 +125,7 @@ def load_splits(
 
 
 def _read_docs(path: Path, keep: dict[str, str]) -> Iterator[EvalDoc]:
-    # reads phase 1 norm. corpora
+    # streams a normalised corpus, keeps only docs in a wanted manifest
     with path.open("rb") as fh:
         for line in fh:
             if not line.strip():
@@ -138,6 +144,7 @@ def _read_docs(path: Path, keep: dict[str, str]) -> Iterator[EvalDoc]:
 
 
 def drop_commentary(docs: Sequence[EvalDoc]) -> tuple[list[EvalDoc], int]:
+    """drop paraphrased docs where the paraphraser talks about the task, returns n dropped"""
     kept = [d for d in docs if not (d.breakdown.endswith("_para") and COMMENTARY.search(d.text))]
     return kept, len(docs) - len(kept)
 
@@ -153,6 +160,7 @@ def sample_per_group(
             keep.append(i)
         else:
             machine[d.group_id].append(i)
+    # sorted so the same seed gives the same sample
     for group in sorted(machine):
         members = machine[group]
         keep.extend(rng.sample(members, min(machine_per_group, len(members))))
@@ -160,12 +168,14 @@ def sample_per_group(
 
 
 def write_predictions(path: Path, doc_ids: list[str], scores: np.ndarray) -> None:
+    """(doc_id, score) parquet, the one format every model writes"""
     path.parent.mkdir(parents=True, exist_ok=True)
     table = pa.table({"doc_id": doc_ids, "score": np.asarray(scores, dtype=np.float64)})
     pq.write_table(table, path)
 
 
 def read_predictions(path: Path) -> dict[str, float]:
+    """doc_id -> score"""
     table = pq.read_table(path)
     return dict(zip(table["doc_id"].to_pylist(), table["score"].to_pylist(), strict=True))
 
@@ -174,6 +184,7 @@ def tpr_at_fpr(labels: np.ndarray, scores: np.ndarray, fpr_target: float) -> tup
     """best TPR with FPR <= target, plus the threshold for it"""
     if len(np.unique(labels)) != 2:
         raise ValueError("TPR at FPR needs both classes present")
+    # walk the roc curve, keep the points under the fpr budget and take the highest tpr
     fpr, tpr, thresholds = roc_curve(labels, scores)
     ok = fpr <= fpr_target
     i = int(np.flatnonzero(ok)[np.argmax(tpr[ok])])
@@ -194,6 +205,9 @@ def bootstrap_ci(
     seed: int = 0,
 ) -> list[tuple[float, float]]:
     """95% CI per stat, resamples whole groups w/ replacement"""
+    # groups not docs, a human doc and its generations are correlated so resampling docs
+    # would give intervals that are too narrow
+    # sort rows by group once, then each draw is just a gather of whole groups
     _, inverse = np.unique(groups, return_inverse=True)
     order = np.argsort(inverse, kind="stable")
     counts = np.bincount(inverse)
@@ -203,9 +217,11 @@ def bootstrap_ci(
     for _ in range(n):
         g = rng.integers(0, len(counts), len(counts))
         lens = counts[g]
+        # row index into `order` for every member of every drawn group, no python loop
         offsets = np.repeat(starts[g] - np.r_[0, np.cumsum(lens)[:-1]], lens)
         idx = order[offsets + np.arange(lens.sum())]
         y, s = labels[idx], scores[idx]
+        # one class only, roc stats undefined so skip the draw
         if y.min() == y.max():
             continue
         for out, stat in zip(values, stats, strict=True):
@@ -216,6 +232,7 @@ def bootstrap_ci(
 def compute_metrics(
     model: str, split: str, docs: list[EvalDoc], predictions: dict[str, float]
 ) -> SplitMetrics:
+    """everything in SplitMetrics, fails loudly if any doc has no prediction"""
     missing = [d.doc_id for d in docs if d.doc_id not in predictions]
     if missing:
         raise ValueError(f"{model}/{split}: {len(missing)} docs without a prediction")
@@ -235,9 +252,11 @@ def compute_metrics(
             partial_auroc,
         ],
     )
+    # balanced acc at a fixed 0.5 so class imbalance doesnt inflate it
     pred = scores >= 0.5
     balanced = 0.5 * (pred[labels == 1].mean() + (~pred[labels == 0]).mean())
 
+    # flag rate per generator / domain at the 1% (and 0.1%) thresholds
     names = np.array([d.breakdown for d in docs])
     by_generator, by_generator_01 = (
         {str(name): float((scores[names == name] >= t).mean()) for name in sorted(set(names))}
@@ -273,7 +292,7 @@ def evaluate_model(
     predictions_dir: Path,
     splits: dict[str, list[EvalDoc]],
 ) -> list[SplitMetrics]:
-    # skips splits w/o a prediction file
+    """metrics for every split that has a prediction file, others skipped"""
     out = []
     for split, docs in splits.items():
         path = predictions_dir / model / f"{split}.parquet"
@@ -283,6 +302,7 @@ def evaluate_model(
 
 
 def write_report(metrics: list[SplitMetrics], directory: Path, stem: str = "baselines") -> Path:
+    """dump metrics to {stem}.json"""
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{stem}.json"
     path.write_bytes(orjson.dumps([m.model_dump() for m in metrics], option=orjson.OPT_INDENT_2))

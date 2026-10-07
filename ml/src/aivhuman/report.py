@@ -19,6 +19,8 @@ TOKEN_LIMITS: Final = (4096, 8192)
 
 
 class CorpusSummary(BaseModel):
+    """counts and distributions for one processed corpus"""
+
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     source: str = ""
@@ -51,6 +53,7 @@ class CorpusSummary(BaseModel):
         return self.straddling_spans / self.labelled_spans if self.labelled_spans else 0.0
 
     def quantiles(self, values: list[int]) -> dict[str, float]:
+        # nearest rank, fine at these sizes
         if not values:
             return {}
         ordered = sorted(values)
@@ -98,6 +101,8 @@ def _bucket_name(low: int, high: int) -> str:
 def summarise(
     path: Path, *, content_keys: dict[str, tuple[str, int]] | None = None
 ) -> CorpusSummary:
+    """stream one jsonl into a CorpusSummary"""
+    # content_keys (optional) collects text hash -> (doc_id, label) for the overlap check
     summary = CorpusSummary()
     groups: set[str] = set()
     buckets = {_bucket_name(lo, hi): 0 for lo, hi in LENGTH_BUCKETS}
@@ -118,6 +123,7 @@ def summarise(
         summary.by_domain[domain] = summary.by_domain.get(domain, 0) + 1
         summary.by_generator[generator] = summary.by_generator.get(generator, 0) + 1
         summary.by_split_role[doc.split_role] = summary.by_split_role.get(doc.split_role, 0) + 1
+        # span length buckets + sentence labels, doc tokens summed over spans
         doc_tokens = 0
         for span in doc.sentences:
             doc_tokens += span.n_tokens
@@ -263,6 +269,7 @@ def metric_rows(
     overlap: dict[str, Any] | None = None,
     verify: list[dict[str, Any]] | None = None,
 ) -> list[Row]:
+    """flatten summaries, segment stats, overlap and verify results into csv rows"""
     # long format, one row per number
     rows: list[Row] = []
 
@@ -270,7 +277,7 @@ def metric_rows(
         rows.extend((section, source, k, v) for k, v in values.items())
 
     for s in summaries:
-        side = sidecars.get(s.source, {})
+        side = sidecars.get(s.source, {})  # {corpus}.stats.json written at ingest
         add(
             "corpus",
             s.source,
@@ -319,6 +326,7 @@ def metric_rows(
                 },
             )
 
+    # cross corpus text overlap (leak check)
     if overlap is not None:
         human_both = overlap.get("shared_keys_human_both_sides", {})
         for pair, count in sorted(overlap.get("shared_keys", {}).items()):
@@ -379,6 +387,7 @@ def build(
         if sidecar.exists():
             sidecars[summary.source] = orjson.loads(sidecar.read_bytes())
 
+    # no overlap passed in, work it out from the text hashes collected above
     if overlap is None:
         overlap = _overlap_from_keys(keys, {s.source: s.docs for s in summaries})
 

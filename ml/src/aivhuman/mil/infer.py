@@ -18,6 +18,8 @@ SHORT_TOKENS: Final = EDGES[0]  # below this its capped, never flagged
 
 
 class Thresholds(BaseModel):
+    """operating points read back from evaluation.json"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     sentence: float
@@ -29,12 +31,13 @@ class Thresholds(BaseModel):
 
     @classmethod
     def from_report(cls, path: Path, run: str) -> "Thresholds":
+        # sentence point from seqxgpt test, doc point from mage-x
         payload = orjson.loads(path.read_bytes())
         point = next(p for p in payload["sentences"]["points"] if p["name"] == SENTENCE_POINT)
         doc = next(m for m in payload["documents"] if m["model"] == run and m["split"] == DOC_SPLIT)
         return cls(
             sentence=point["threshold"],
-            sentence_recall=point["cells"][-1]["recall"],
+            sentence_recall=point["cells"][-1]["recall"],  # last cell = all lengths
             false_highlight_rate=point["false_highlight_rate"],
             document=doc["threshold_1pct"],
             document_tpr=doc["tpr_at_1pct_fpr"],
@@ -42,6 +45,8 @@ class Thresholds(BaseModel):
 
 
 class SentenceScore(BaseModel):
+    """one scored sentence"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     start: int
@@ -54,6 +59,8 @@ class SentenceScore(BaseModel):
 
 
 class ScoreResult(BaseModel):
+    """everything `score` returns for one text"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     text: str
@@ -72,6 +79,7 @@ def build_result(
     contributions: list[list[tuple[str, float]]],
     thresholds: Thresholds,
 ) -> ScoreResult:
+    """apply thresholds to scores and attach caveats"""
     # no model here, split out so its testable
     sentences = []
     for (a, b), n, p, c in zip(spans, n_tokens, probs, contributions, strict=True):
@@ -87,6 +95,7 @@ def build_result(
                 contributions=c,
             )
         )
+    # always shown, the measured error rates are part of the answer
     caveats = [
         f"At this sentence threshold, {thresholds.false_highlight_rate:.0%} of wholly human test "
         f"documents still had at least one flagged sentence, and "
@@ -107,10 +116,13 @@ def build_result(
 
 
 class Scorer:
+    """loads model, calibrator, thresholds and gpt-2 once, then scores texts"""
+
     # cpu fp32 by default. extraction ran fp16 on gpu (~0.05 nats off on lm feats) so
     # scores wont exactly match the stored preds
 
     def __init__(self, checkpoint: Path, report: Path, run: str, device: str = "cpu") -> None:
+        # heavy imports kept local so the cli starts fast
         import torch
 
         from aivhuman.features import extract, lm
@@ -124,9 +136,11 @@ class Scorer:
         self.ref = lm.ReferenceLM(torch.device(device))
         self.segmenter = Segmenter()
         extract.init_worker()
+        # model was trained on the kept subset, pick those columns out of the full set
         self.columns = [FEATURE_NAMES.index(n) for n in self.std.names]
 
     def score(self, raw: str) -> ScoreResult:
+        """nfc, segment, extract the same features as training, score + calibrate"""
         from aivhuman.features import extract, lm
         from aivhuman.mil.data import Bags
         from aivhuman.mil.predict import explain
@@ -143,6 +157,7 @@ class Scorer:
         _, n_tokens = count_tokens(text, spans)
         ids, offsets = self.ref.encode([text])
         token_scores = self.ref.token_scores(ids)[0]
+        # same column order as features/extract.py: lm, lexical/syntax, length
         x = np.hstack(
             [
                 lm.span_features(offsets[0], token_scores, spans),
@@ -150,6 +165,7 @@ class Scorer:
                 np.asarray(n_tokens, dtype=np.float64)[:, None],
             ]
         )[:, self.columns]
+        # a bag of one doc, labels are dummies
         n = len(spans)
         bags = Bags(
             doc_ids=["input"],

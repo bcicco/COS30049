@@ -33,16 +33,19 @@ EVAL_PER_CLASS: Final = 1000  # clean docs per class, each gets every attack
 SEED: Final = 20240503
 
 # (clean row id, attack) -> (adv split, group_id)
+# attacked docs keep the clean docs group so they never leak across splits
 Wanted = dict[tuple[str, str], tuple[str, str]]
 
 
 def _clean_docs(features: Path) -> list[tuple[str, int]]:
+    # (doc_id, label) per doc, span_idx == 0 gives one row per doc
     t = pq.read_table(features, columns=["doc_id", "span_idx", "label"])
     t = t.filter(pc.equal(t["span_idx"], 0))
     return list(zip(t["doc_id"].to_pylist(), t["label"].to_pylist(), strict=True))
 
 
 def _row_id(doc_id: str) -> str:
+    # "raid:{id}" -> "{id}", matches adv_source_id in the attack partitions
     return doc_id.split(":", 1)[1]
 
 
@@ -67,12 +70,14 @@ def select(features_dir: Path, groups: dict[str, dict[str, str]], limit: int | N
         for is_human in (True, False):
             pool = sorted(d for d, y in docs if (y == LABEL_HUMAN) == is_human)
             sample += rng.sample(pool, min(per_class, len(pool)))
-        attacks = ALL_ATTACKS[::3] if limit else ALL_ATTACKS
+        attacks = ALL_ATTACKS[::3] if limit else ALL_ATTACKS  # fewer attacks for quick runs
         out.update({(_row_id(d), a): (adv, group_of[d]) for d in sample for a in attacks})
     return out
 
 
 def load_rows(by_attack: Path, wanted: Wanted) -> Iterator[raid.RawRow]:
+    """stream the wanted attacked rows from the hive partitioned parquet"""
+    # filter is pushed into the scan so only matching rows get read
     ids = sorted({row_id for row_id, _ in wanted})
     dataset = ds.dataset(by_attack, format="parquet", partitioning="hive")
     expr = (ds.field("attack") != "none") & ds.field("adv_source_id").isin(ids)
@@ -84,4 +89,5 @@ def load_rows(by_attack: Path, wanted: Wanted) -> Iterator[raid.RawRow]:
 
 
 def to_doc(row: raid.RawRow, seg: Segmenter) -> Doc | None:
+    """same as raid.to_doc but defangs the text first"""
     return raid.to_doc(row.model_copy(update={"generation": defang(row.generation)}), seg)

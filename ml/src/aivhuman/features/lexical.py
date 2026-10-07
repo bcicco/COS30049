@@ -1,3 +1,5 @@
+"""lexical + repetition features from plain word tokens"""
+
 import functools
 import math
 import re
@@ -7,14 +9,16 @@ from typing import Final
 import numpy as np
 from wordfreq import zipf_frequency
 
-MATTR_WINDOW: Final = 10
+MATTR_WINDOW: Final = 10  # sentences are short, 10 keeps most of them windowed
 RARE_ZIPF: Final = 3.0  # ~1 per million
-REPETITION_LOOKBACK: Final = 3
+REPETITION_LOOKBACK: Final = 3  # compare against the previous 3 sentences only
 
 # moses splits clitics off ("do n't", "it 's") so glue them back first
 _CLITIC_RE = re.compile(r"\s+(n't|'s|'re|'ve|'ll|'d|'m)\b")
 _WORD_RE = re.compile(r"[a-z]+(?:'[a-z]+)*")
 
+# closed class words (articles, pronouns, preps, aux, conj). their rate is a style
+# signal that doesnt depend on topic, and theyre left out of the repetition bags
 FUNCTION_WORDS: Final = frozenset(
     [
         "a",
@@ -181,16 +185,19 @@ FUNCTION_WORDS: Final = frozenset(
 
 
 def words(text: str) -> list[str]:
+    """lowercase word tokens, curly apostrophes folded and clitics rejoined"""
     text = text.lower().replace("’", "'")  # noqa: RUF001
     return _WORD_RE.findall(_CLITIC_RE.sub(r"\1", text))
 
 
 def mattr(tokens: list[str], window: int = MATTR_WINDOW) -> float:
+    """moving average type token ratio, vocab variety w/o the raw TTR length bias"""
     # plain TTR if shorter than the window
     if not tokens:
         return math.nan
     if len(tokens) <= window:
         return len(set(tokens)) / len(tokens)
+    # slide the window one word at a time, distinct count updated incrementally
     counts = Counter(tokens[:window])
     total = len(counts)
     for i in range(window, len(tokens)):
@@ -203,12 +210,13 @@ def mattr(tokens: list[str], window: int = MATTR_WINDOW) -> float:
     return total / ((len(tokens) - window + 1) * window)
 
 
+# zipf lookups are slow and words repeat a lot across docs, so cache
 @functools.lru_cache(maxsize=500_000)
 def _is_rare(word: str) -> bool:
     return bool(zipf_frequency(word, "en") < RARE_ZIPF)
 
 
-# a.b = |a||b|*cos(theta)
+# cosine of two word count bags, a.b = |a||b|*cos(theta)
 def _cosine(a: Counter[str], b: Counter[str]) -> float:
     if not a or not b:
         return 0.0
@@ -224,12 +232,14 @@ def span_features(text: str, spans: list[tuple[int, int]]) -> np.ndarray:
     bags: list[Counter[str]] = []
     for i, (start, end) in enumerate(spans):
         toks = words(text[start:end])
+        # content words only, else every sentence "repeats" the/and/of
         bag = Counter(t for t in toks if t not in FUNCTION_WORDS)
         if toks:
             out[i, 0] = mattr(toks)
             out[i, 1] = sum(map(len, toks)) / len(toks)
             out[i, 2] = sum(t in FUNCTION_WORDS for t in toks) / len(toks)
             out[i, 3] = sum(map(_is_rare, toks)) / len(toks)
+        # repetition: closest of the previous few sentences, 1.0 = same content words
         out[i, 4] = max((_cosine(bag, b) for b in bags[-REPETITION_LOOKBACK:]), default=0.0)
         bags.append(bag)
     return out

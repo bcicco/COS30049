@@ -13,9 +13,10 @@ TOKENIZER_FILE: Final = "tokenizer.json"
 N_SPECIAL_TOKENS: Final = 2
 
 
-# how sick is this
+# cached so the tokenizer is loaded once per process
 @functools.lru_cache(maxsize=1)
 def tokenizer(revision: str | None = None) -> Tokenizer:
+    """ModernBERT tokenizer, downloaded once into the hf cache"""
     path = hf_hub_download(TOKENIZER_REPO, TOKENIZER_FILE, revision=revision)
     return Tokenizer.from_file(path)
 
@@ -24,6 +25,7 @@ def assign_to_spans(offsets: list[tuple[int, int]], spans: list[tuple[int, int]]
     """Span index per token by character midpoint"""
     # -1 for tokens outside every span
 
+    # both lists are sorted so one forward pass, the span cursor never moves back
     out = [-1] * len(offsets)
     si = 0
     for ti, (start, end) in enumerate(offsets):
@@ -43,7 +45,7 @@ def assign_to_spans(offsets: list[tuple[int, int]], spans: list[tuple[int, int]]
 def count_tokens(
     text: str, spans: list[tuple[int, int]], revision: str | None = None
 ) -> tuple[int, list[int]]:
-    # returns (n_tokens, [n_tokens per span])
+    """(n_tokens, [n_tokens per span]), no special tokens counted"""
     if not text:
         return 0, [0] * len(spans)
 

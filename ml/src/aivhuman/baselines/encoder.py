@@ -22,11 +22,13 @@ CHUNK: Final = 20_000  # docs tokenised at a time
 
 
 class EncoderConfig(BaseModel):
+    """training + eval settings for the ModernBERT baseline"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     max_length: int = 512
     batch_size: int = 8
-    grad_accum: int = 4
+    grad_accum: int = 4  # effective batch = batch_size * grad_accum
     log_every: int = 50
     eval_batch_size: int = 16
     lr: float = 5e-5
@@ -39,6 +41,8 @@ class EncoderConfig(BaseModel):
 
 
 class DocClassifier(nn.Module):
+    """encoder + linear head on the mean of the token states"""
+
     def __init__(self, backbone: str = BACKBONE) -> None:
         super().__init__()
         self.encoder = AutoModel.from_pretrained(backbone, attn_implementation="sdpa")
@@ -46,6 +50,7 @@ class DocClassifier(nn.Module):
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         hidden = self.encoder(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state
+        # mean over real tokens only, padding masked out
         mask = attention_mask.unsqueeze(-1).to(hidden.dtype)
         pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1)
         logits: torch.Tensor = self.head(pooled).squeeze(-1)
@@ -53,7 +58,8 @@ class DocClassifier(nn.Module):
 
 
 def _batches(order: list[int], lengths: list[int], batch_size: int) -> list[list[int]]:
-    # group by similar length to cut padding
+    # group by similar length to cut padding. sorting only inside a window keeps the
+    # shuffle mostly intact for training
     window = batch_size * 50
     out: list[list[int]] = []
     for start in range(0, len(order), window):
@@ -65,6 +71,7 @@ def _batches(order: list[int], lengths: list[int], batch_size: int) -> list[list
 def _collate(
     ids: list[np.ndarray], batch: list[int], pad_id: int, device: torch.device
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    # right pad to the longest doc in the batch
     width = max(len(ids[i]) for i in batch)
     input_ids = torch.full((len(batch), width), pad_id, dtype=torch.long)
     mask = torch.zeros((len(batch), width), dtype=torch.long)
@@ -75,6 +82,8 @@ def _collate(
 
 
 class Encoder:
+    """tokeniser + classifier, handles fit / score"""
+
     def __init__(self, cfg: EncoderConfig, device: torch.device | None = None) -> None:
         self.cfg = cfg
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -95,11 +104,13 @@ class Encoder:
 
     @torch.no_grad()
     def score(self, docs: list[EvalDoc]) -> np.ndarray:
+        """p(machine) per doc, in input order"""
         self.model.eval()
         out = np.empty(len(docs), dtype=np.float64)
         for start in range(0, len(docs), CHUNK):
             ids = self.tokenize(docs[start : start + CHUNK])
             lengths = [len(x) for x in ids]
+            # sorted by length so eval batches have almost no padding
             order = sorted(range(len(ids)), key=lambda i: lengths[i])
             for batch in _batches(order, lengths, self.cfg.eval_batch_size):
                 input_ids, mask = _collate(ids, batch, self.tokenizer.pad_token_id, self.device)
@@ -120,6 +131,8 @@ class Encoder:
         lengths = [len(x) for x in ids]
         labels = torch.tensor([d.label for d in train], dtype=torch.float32)
 
+        # RAID has ~34 machine docs per human, so each epoch subsamples machine docs per group.
+        # sizes the lr schedule off one sample
         n_epoch = len(sample_per_group(train, cfg.machine_per_group, random.Random(0)))
         steps = math.ceil(n_epoch / (cfg.batch_size * cfg.grad_accum)) * cfg.epochs
         optimiser = torch.optim.AdamW(
@@ -133,6 +146,7 @@ class Encoder:
         for epoch in range(cfg.epochs):
             chosen = sample_per_group(train, cfg.machine_per_group, rng)
             rng.shuffle(chosen)
+            # reweight the positive class back to an even split
             n_human = sum(train[i].label == LABEL_HUMAN for i in chosen)
             loss_fn = nn.BCEWithLogitsLoss(
                 pos_weight=torch.tensor(n_human / (len(chosen) - n_human), device=self.device)
@@ -148,6 +162,7 @@ class Encoder:
                     logits = self.model(input_ids, mask)
                 loss = loss_fn(logits.float(), labels[batch].to(self.device)) / cfg.grad_accum
                 loss.backward()
+                # step every grad_accum batches (and on the last one)
                 running += loss.item() * cfg.grad_accum
                 if step % cfg.grad_accum == 0 or step == len(batches):
                     nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -163,6 +178,7 @@ class Encoder:
                     )
                     running = 0.0
 
+            # keep the epoch with the best dev TPR@1%FPR
             tpr, _ = tpr_at_fpr(dev_labels, self.score(dev_sample), 0.01)
             print(f"  epoch {epoch}: dev TPR@1%FPR {tpr:.4f}", flush=True)
             if not history or tpr > max(history):
@@ -177,6 +193,7 @@ class Encoder:
 def predict(
     encoder: Encoder, splits: dict[str, list[EvalDoc]], predictions_dir: Path
 ) -> Iterator[str]:
+    """score every non train split, skips ones already written. yields split names"""
     for split, docs in splits.items():
         path = predictions_dir / MODEL_NAME / f"{split}.parquet"
         if split == "train" or path.exists():

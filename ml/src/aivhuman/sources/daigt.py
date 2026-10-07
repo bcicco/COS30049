@@ -33,6 +33,8 @@ class RawRow(BaseModel):
 
 
 class DaigtStats(BaseModel):
+    """row counts from a scan, used for the dataset report"""
+
     model_config = ConfigDict(validate_assignment=False, extra="forbid")
 
     rows: NonNegativeInt = 0
@@ -46,10 +48,12 @@ class DaigtStats(BaseModel):
 
     @property
     def integrity_ok(self) -> bool:
+        # every label parsed and both classes present
         return self.bad_labels == 0 and self.human_rows > 0 and self.machine_rows > 0
 
     @property
     def is_green(self) -> bool:
+        # every row is either a doc or skipped for empty text, nothing lost
         return self.integrity_ok and self.docs + self.empty_text == self.rows
 
     def as_dict(self) -> dict[str, Any]:
@@ -60,15 +64,18 @@ class DaigtStats(BaseModel):
 
 
 def label(row: RawRow) -> int:
+    """raw label string -> 0 human / 1 machine"""
     # same polarity as ours, 1 = AI
     return {"0": LABEL_HUMAN, "1": LABEL_MACHINE}[row.label]
 
 
 def generator(row: RawRow) -> str | None:
+    """generator name, None for human essays"""
     return None if label(row) == LABEL_HUMAN else row.source
 
 
 def iter_rows(path: Path) -> Iterator[RawRow]:
+    """stream the csv as validated rows, fails fast if the columns change"""
     csv.field_size_limit(_FIELD_SIZE_LIMIT)
     with path.open(encoding="utf-8", newline="") as fh:
         reader = csv.DictReader(fh)
@@ -86,6 +93,7 @@ def iter_rows(path: Path) -> Iterator[RawRow]:
 
 
 def scan(path: Path) -> DaigtStats:
+    """count rows without building docs"""
     st = DaigtStats()
     for row in iter_rows(path):
         account(row, st)
@@ -93,10 +101,11 @@ def scan(path: Path) -> DaigtStats:
 
 
 def account(row: RawRow, st: DaigtStats) -> None:
+    """add one row to the stats"""
     st.rows += 1
     if row.label not in ("0", "1"):
         st.bad_labels += 1
-        return
+        return  # cant map it, so dont count it towards either class
     if label(row) == LABEL_HUMAN:
         st.human_rows += 1
     else:
@@ -109,7 +118,9 @@ def account(row: RawRow, st: DaigtStats) -> None:
 
 
 def to_doc(row: RawRow, seg: Segmenter) -> Doc | None:
+    """normalise + segment one essay into a Doc, None if the text is empty"""
     # pure so it can run in a worker
+    # nfc once here, before any offsets exist (see text/normalize.py)
     text = nfc(row.text)
     if not text.strip():
         return None

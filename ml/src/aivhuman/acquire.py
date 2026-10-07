@@ -12,6 +12,7 @@ MAGE_REPO = "yaful/MAGE"
 # The script is not compatible with datasets 4.x and the repo is not maintained any more.
 # I wasted so much time trying to get it to work
 
+# mage split name -> file in the HF repo
 MAGE_FILES: dict[str, str] = {
     "train": "train.csv",
     "valid": "valid.csv",
@@ -35,6 +36,7 @@ _BENCH_DIR = "SeqXGPT/dataset/SeqXGPT-Bench"
 _OOD_DIR = "SeqXGPT/dataset/OOD sentence-level detection dataset"
 _GENERATOR_STEMS = ("gpt2", "gpt3", "gptj", "gptneo", "llama", "human")
 
+# one jsonl per generator, bench is used for calib/test, ood is the extra sentence set
 SEQXGPT_BENCH_FILES: tuple[str, ...] = tuple(
     f"{_BENCH_DIR}/en_{stem}_lines.jsonl" for stem in _GENERATOR_STEMS
 )
@@ -44,6 +46,7 @@ SEQXGPT_OOD_FILES: tuple[str, ...] = tuple(
 
 
 def fetch_mage(revision: str | None = None) -> list[Path]:
+    """MAGE csvs from HF"""
     dest = RAW_DIR / "mage"
     return [
         fetch_hf_file(repo=MAGE_REPO, path=path, dest_dir=dest, revision=revision)
@@ -52,6 +55,7 @@ def fetch_mage(revision: str | None = None) -> list[Path]:
 
 
 def fetch_seqxgpt(*, include_ood: bool = True) -> list[Path]:
+    """SeqXGPT jsonl files from github, bench and ood kept in separate dirs"""
     dest = RAW_DIR / "seqxgpt"
     paths = list(SEQXGPT_BENCH_FILES)
     if include_ood:
@@ -80,6 +84,7 @@ def fetch_raid(revision: str | None = None) -> list[Path]:
 
 
 def fetch_daigt() -> list[Path]:
+    """DAIGT v2 csv from kaggle, copied out of the kagglehub cache into data/raw"""
     # public dataset, no kaggle creds needed
     import kagglehub
 

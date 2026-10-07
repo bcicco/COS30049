@@ -1,3 +1,5 @@
+"""MIL training loop, model selection and checkpoint io"""
+
 import copy
 import random
 import time
@@ -17,6 +19,8 @@ from aivhuman.mil.model import MILConfig, MILModel
 
 
 class Scores(BaseModel):
+    """raw logits from one pass over a set of bags"""
+
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     doc_logits: np.ndarray
@@ -25,6 +29,8 @@ class Scores(BaseModel):
 
 
 class RunResult(BaseModel):
+    """metrics of the best epoch of one config"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     config: MILConfig
@@ -39,6 +45,7 @@ class RunResult(BaseModel):
 
 @torch.no_grad()
 def score(model: MILModel, bags: Bags, batch_size: int = 256) -> Scores:
+    """doc logits, coverage and sentence logits for every bag"""
     model.eval()
     doc = np.empty(len(bags), dtype=np.float64)
     cov = np.empty(len(bags), dtype=np.float64)
@@ -46,6 +53,7 @@ def score(model: MILModel, bags: Bags, batch_size: int = 256) -> Scores:
     for idx, x, mask in batches(bags, range(len(bags)), batch_size):
         d, c, s = model(x, mask)
         doc[idx], cov[idx] = d.numpy(), c.numpy()
+        # unpad back into the flat span order
         for row, i in enumerate(idx):
             lo, hi = bags.offsets[i], bags.offsets[i + 1]
             sent[lo:hi] = s[row, : hi - lo].numpy()
@@ -60,11 +68,12 @@ def _sentence_loss(bags: Bags, idx: list[int], logits: torch.Tensor) -> torch.Te
         target[row, : hi - lo] = torch.from_numpy(np.nan_to_num(bags.span_labels[lo:hi], nan=-1.0))
     known = target >= 0
     if not known.any():
-        return logits.sum() * 0.0
+        return logits.sum() * 0.0  # keeps the graph connected
     return F.binary_cross_entropy_with_logits(logits[known], target[known])
 
 
 def sentence_auroc(model: MILModel, bags: Bags) -> float:
+    # labelled, non straddling sentences only
     keep, y = bags.sentence_labels()
     return float(roc_auc_score(y, score(model, bags).sentence_logits[keep]))
 
@@ -78,8 +87,10 @@ def fit(cfg: MILConfig, train: Bags, dev: Bags, sentence_val: Bags) -> tuple[MIL
     rng = random.Random(cfg.seed)
     model = MILModel(train.x.shape[1], cfg)
     model.set_knots(torch.from_numpy(train.x))
+    # only the head trains, features are fixed
     optimiser = torch.optim.AdamW(model.head.parameters(), lr=cfg.lr, weight_decay=0.0)
     labels = torch.from_numpy(train.labels)
+    # pos_weight balances the ~34:1 machine skew back to even
     n_machine = float(train.labels.sum())
     pos_weight = torch.tensor((len(train) - n_machine) / n_machine)
     doc_loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
@@ -93,6 +104,7 @@ def fit(cfg: MILConfig, train: Bags, dev: Bags, sentence_val: Bags) -> tuple[MIL
         for idx, x, mask in batches(train, order, cfg.batch_size):
             y = labels[idx]
             d, _, s = model(x, mask)
+            # only the pooled doc logit sees the label, unless sentence_weight is set
             loss = doc_loss(d, y)
             if cfg.sentence_weight:
                 loss = loss + cfg.sentence_weight * _sentence_loss(train, idx, s)
@@ -100,6 +112,7 @@ def fit(cfg: MILConfig, train: Bags, dev: Bags, sentence_val: Bags) -> tuple[MIL
             optimiser.zero_grad(set_to_none=True)
             loss.backward()
             optimiser.step()
+        # end of epoch: score dev + sentence val, keep the best, stop after patience epochs
         dev_scores = score(model, dev).doc_logits
         pauc = partial_auroc(dev.labels, dev_scores)
         sent = sentence_auroc(model, sentence_val)
@@ -154,6 +167,7 @@ def sweep_configs(sentence_weights: tuple[float, ...] = ()) -> list[MILConfig]:
 
 
 def save(path: Path, model: MILModel, std: Standardizer, result: RunResult) -> None:
+    # standardizer saved with the weights so inference uses the same train stats
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
@@ -167,6 +181,7 @@ def save(path: Path, model: MILModel, std: Standardizer, result: RunResult) -> N
 
 
 def load(path: Path) -> tuple[MILModel, Standardizer]:
+    """model + standardizer from a checkpoint written by save"""
     payload = torch.load(path, map_location="cpu", weights_only=False)
     std = Standardizer.model_validate(payload["standardizer"])
     # old ckpts still have crf / coverage loss keys

@@ -11,10 +11,12 @@ from aivhuman import config
 from aivhuman import evaluate as ev
 from aivhuman.baselines import encoder
 
+# prediction dirs under data/predictions/ that `evaluate` reads
 MODELS = ("tfidf-lr", "modernbert-doc")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """entry point for aivhuman-baseline"""
     config.configure_stdio()
     parser = argparse.ArgumentParser(prog="aivhuman-baseline", description=__doc__)
     subparsers = parser.add_subparsers()
@@ -22,14 +24,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     p = subparsers.add_parser("tfidf", help="fit tf-idf + LR on train and score the eval splits")
     p.set_defaults(handler=_tfidf)
 
+    # fine tune ModernBERT on train, select on dev, then score every eval split
     p = subparsers.add_parser("encoder")
     p.add_argument("--epochs", type=int, default=None)
     p.add_argument("--batch-size", type=int, default=None)
     p.add_argument("--grad-accum", type=int, default=None)
     p.add_argument("--eval-batch-size", type=int, default=None)
-    p.add_argument("--predict-only", action="store_true")
+    p.add_argument("--predict-only", action="store_true")  # reuse the saved checkpoint
     p.set_defaults(handler=_encoder)
 
+    # metrics for both baselines from their saved predictions
     p = subparsers.add_parser("evaluate")
     p.set_defaults(handler=_evaluate)
 
@@ -42,6 +46,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _load(splits: Sequence[str]) -> dict[str, list[ev.EvalDoc]]:
+    """load docs for the named splits from data/processed via the manifests"""
     start = time.time()
     loaded = ev.load_splits(config.PROCESSED_DIR, config.MANIFESTS_DIR, splits)
     sizes = ", ".join(f"{k} {len(v):,}" for k, v in loaded.items())
@@ -50,6 +55,7 @@ def _load(splits: Sequence[str]) -> dict[str, list[ev.EvalDoc]]:
 
 
 def _tfidf(_args: argparse.Namespace) -> int:
+    """fit tf-idf + LR, grid searched on dev, and write predictions"""
     from aivhuman.baselines import tfidf
 
     splits = _load(["train", *ev.EVAL_SPLITS])
@@ -59,7 +65,8 @@ def _tfidf(_args: argparse.Namespace) -> int:
 
 
 def _encoder(args: argparse.Namespace) -> int:
-
+    """train (or load) ModernBERT and write predictions per split"""
+    # only pass flags that were set so EncoderConfig defaults win otherwise
     overrides = {
         k: v
         for k in ("epochs", "batch_size", "grad_accum", "eval_batch_size")
@@ -85,6 +92,7 @@ def _encoder(args: argparse.Namespace) -> int:
 
 
 def _evaluate(_args: argparse.Namespace) -> int:
+    """score both baselines on the eval splits and write the report json"""
     splits = _load(ev.EVAL_SPLITS)
     metrics = [
         m for name in MODELS for m in ev.evaluate_model(name, config.PREDICTIONS_DIR, splits)

@@ -14,6 +14,7 @@ from aivhuman.text.normalize import CompositionStraddlesBoundary, nfc, nfc_split
 from aivhuman.text.segment import Segmenter, n_words
 from aivhuman.text.tokens import count_tokens
 
+# a span is machine if at least half its chars are past the boundary
 MACHINE_CHAR_THRESHOLD: Final = 0.5
 
 # file stem -> generator, only a cross check on the per record label field.
@@ -35,16 +36,20 @@ FILE_GENERATOR: Final = {
 
 
 class RawRecord(BaseModel):
+    """one jsonl line as read"""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     file_stem: str
     row_index: NonNegativeInt
     text: str
-    prompt_len: NonNegativeInt | None
-    label_raw: str
+    prompt_len: NonNegativeInt | None  # char offset of the human -> machine boundary
+    label_raw: str  # generator name
 
 
 class SeqXGPTStats(BaseModel):
+    """boundary + segmentation checks, used for the dataset report"""
+
     model_config = ConfigDict(extra="forbid")
 
     records: NonNegativeInt = 0
@@ -61,6 +66,7 @@ class SeqXGPTStats(BaseModel):
         return self.straddle_spans / self.total_spans if self.total_spans else 0.0
 
     def as_dict(self) -> dict[str, Any]:
+        # snap dist = chars between the boundary and the nearest sentence edge
         snaps = sorted(self.boundary_snap_dists)
 
         def pct(p: float) -> int:
@@ -85,7 +91,8 @@ class SeqXGPTStats(BaseModel):
 
 
 def load_records(directory: Path) -> list[RawRecord]:
-    # sorted by filename
+    """read every jsonl file in the dir, sorted by filename so ids are stable"""
+    # loads into a list (not a generator) bc group recovery needs all records at once
     out: list[RawRecord] = []
     for path in sorted(directory.glob("*.jsonl")):
         for i, line in enumerate(path.open(encoding="utf-8")):
@@ -136,6 +143,7 @@ def assign_sentence_labels(
 
 
 def _boundary_snap_dist(spans: Sequence[tuple[int, int]], boundary: int) -> int:
+    # distance from the boundary to the closest span edge, 0 = lands exactly on a sentence break
     if not spans:
         return 0
     edges = [spans[0][0]] + [e for _s, e in spans]
@@ -149,12 +157,14 @@ def build_docs(
     segmenter: Segmenter | None = None,
     stats: SeqXGPTStats | None = None,
 ) -> Iterator[Doc]:
+    """stream Docs with per sentence labels, filling stats as it goes"""
     seg = segmenter or Segmenter()
     st = stats if stats is not None else SeqXGPTStats()
 
     records = load_records(directory)
     st.records = len(records)
 
+    # no source doc id in seqxgpt, groups are rebuilt by matching the shared human prefix
     assignment = recover_seqxgpt_groups([(r.file_stem, r.text, r.prompt_len) for r in records])
 
     for rec, group_id in zip(records, assignment.group_ids, strict=True):
@@ -168,6 +178,7 @@ def build_docs(
             boundary = len(text)
             retract = delta = 0
         else:
+            # nfc the text and move the boundary offset with it, else every label shifts
             try:
                 split = nfc_split(rec.text, rec.prompt_len)
             except (CompositionStraddlesBoundary, ValueError):
@@ -203,6 +214,7 @@ def build_docs(
             for i, (start, end) in enumerate(spans)
         ]
 
+        # doc label from the boundary, a doc with any machine text is machine
         doc_label = seqxgpt_doc_label(rec.label_raw, boundary, len(text))
         yield Doc(
             doc_id=f"seqxgpt:{rec.file_stem}:{rec.row_index:06d}",
