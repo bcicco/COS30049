@@ -28,3 +28,11 @@ wheels/
 *.safetensors
 checkpoints/
 .ipynb_checkpoints/
+# Web app. The *.json / *.html rules above are for ML artifacts; the
+# frontend needs its package manifests, lint config and index.html tracked.
+!frontend/**/*.json
+!frontend/**/*.html
+node_modules/
+# The served model is ~70 KB and the backend can't start without it.
+!backend/models/**/*.pt
+!backend/models/**/*.json

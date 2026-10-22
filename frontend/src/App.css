@@ -1,0 +1,181 @@
+main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.score {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+mark {
+  color: inherit;
+  border-radius: 3px;
+}
+
+mark.human {
+  background: var(--human);
+}
+
+mark.ai {
+  background: var(--ai);
+}
+
+/* textarea over a backdrop of highlights. Both layers must share every
+   property that affects text layout or the marks drift off the words. */
+.editor {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.editor-layer {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 14px;
+  border: 0;
+  font: inherit;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+textarea.editor-layer {
+  position: relative;
+  min-height: 12rem;
+  color: inherit;
+  background: transparent;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.backdrop mark {
+  color: transparent;
+}
+
+.backdrop mark.selected {
+  outline: 1px solid var(--muted);
+}
+
+.editor.scored textarea {
+  cursor: pointer;
+}
+
+.detail {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.footer mark {
+  padding: 0 6px;
+}
+
+button {
+  padding: 6px 16px;
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.error {
+  margin: 0;
+  color: var(--error);
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+button.link {
+  padding: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  text-align: left;
+}
+
+button.link:hover {
+  color: inherit;
+}
+
+.auth {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 320px;
+}
+
+.auth input {
+  padding: 8px 10px;
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.history h2 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.history ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.muted {
+  color: var(--muted);
+}
