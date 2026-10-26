@@ -17,11 +17,6 @@ class Settings(BaseSettings):
     # 100k chars of escaped emoji JSON is ~1.2 MB, so real requests stay well under
     max_body_bytes: int = 2_000_000
 
-    # backend/data/ is gitignored
-    database_url: str = f"sqlite:///{BACKEND_ROOT / 'data' / 'app.db'}"
-    session_days: int = 7
-    cookie_secure: bool = False  # True once served over https
-
     # scoring jobs running at once, and how many may wait for a slot before 503s
     score_workers: int = 1
     score_queue: int = 4

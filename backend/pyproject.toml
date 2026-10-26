@@ -9,8 +9,6 @@ dependencies = [
     "pydantic-settings>=2.6",
     # Scorer + GPT-2/spaCy features. train extra pulls torch, transformers, spacy.
     "aivhuman[train]",
-    "sqlalchemy>=2.0",
-    "argon2-cffi>=23.1",
 ]
 
 [dependency-groups]

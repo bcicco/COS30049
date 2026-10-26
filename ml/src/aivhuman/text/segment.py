@@ -81,11 +81,6 @@ class SegmentStats(BaseModel):
         return round(self.spans / self.docs, 3) if self.docs else 0.0
 
     @property
-    def anchor_failure_rate(self) -> float:
-        # share of spans where pysbd offsets couldnt be verified, quality metric only
-        return round(self.failed / self.spans, 6) if self.spans else 0.0
-
-    @property
     def is_healthy(self) -> bool:
         # health check
         return self.nonws_gap_chars == 0

@@ -7,7 +7,6 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "pysbd==0.3.4",
     # RAID acquisition
-    "datasets>=4.8,<5",
     "huggingface-hub>=0.34,<1",
     # Token counting without dragging in torch.
     "tokenizers>=0.21,<1",
@@ -15,7 +14,7 @@ dependencies = [
     "pyarrow>=17",
     # JSONL write throughput at 500k+ documents.
     "orjson>=3.10",
-    "tqdm>=4.66",
+    "numpy>=2",
     "python-dotenv>=1.0",
     "requests>=2.32",
     "pydantic>=2.9",
@@ -35,7 +34,6 @@ train = [
     "torch>=2.6",
     "transformers>=4.48",
     "scikit-learn>=1.5",
-    "accelerate>=1.0",
     "pandas>=2.2,<3",
     # Sentence features.
     "spacy>=3.8,<4",

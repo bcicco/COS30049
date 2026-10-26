@@ -9,7 +9,7 @@ import pytest
 from aivhuman_api.gate import ScoreGate
 from aivhuman_api.main import app
 from aivhuman_api.routes.score import get_scorer
-from tests.conftest import PASSWORD, TEXT, FakeScorer
+from tests.conftest import TEXT, FakeScorer
 
 pytestmark = pytest.mark.anyio
 DELAY = 0.5
@@ -24,7 +24,6 @@ def anyio_backend() -> str:
 async def client() -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        await c.post("/api/auth/register", json={"username": "alice", "password": PASSWORD})
         yield c
 
 

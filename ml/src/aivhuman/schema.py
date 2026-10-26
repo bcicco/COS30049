@@ -34,8 +34,6 @@ SPLIT_ROLES: Final = frozenset(
     }
 )
 
-TRAINABLE_ROLES: Final = frozenset({"train_pool"})
-
 Label = Annotated[int, Field(ge=0, le=1)]
 
 # sentences stored as character offsets into the parent Doc.text, which is NFC-normalised, Offset

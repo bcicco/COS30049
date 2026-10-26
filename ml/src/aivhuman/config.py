@@ -19,7 +19,6 @@ DATA_ROOT: Final = Path(os.environ.get("AIVHUMAN_DATA_ROOT") or ML_ROOT / "data"
 RAW_DIR: Final = DATA_ROOT / "raw"
 INTERIM_DIR: Final = DATA_ROOT / "interim"
 PROCESSED_DIR: Final = DATA_ROOT / "processed" / "phase1"
-HF_DIR: Final = DATA_ROOT / "hf"
 PREDICTIONS_DIR: Final = DATA_ROOT / "predictions"
 CHECKPOINTS_DIR: Final = DATA_ROOT / "checkpoints"
 FEATURES_DIR: Final = DATA_ROOT / "features"
@@ -48,7 +47,6 @@ def ensure_dirs() -> None:
         RAW_DIR,
         INTERIM_DIR,
         PROCESSED_DIR,
-        HF_DIR,
         REPORTS_DIR,
         MANIFESTS_DIR,
     ):

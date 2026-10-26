@@ -1,11 +1,8 @@
 // Mirrors backend/src/aivhuman_api/schemas.py. Keep the two in sync.
 
-/** Mirrors aivhuman.mil.infer.MAX_CHARS. */
-export const MAX_CHARS = 100_000
-
 /**
  * @typedef {object} ScoreRequest
- * @property {string} text 1 to MAX_CHARS characters
+ * @property {string} text 1 to 100,000 characters
  */
 
 /**
@@ -28,30 +25,4 @@ export const MAX_CHARS = 100_000
  * @property {SentenceScore[]} sentences
  * @property {number} document_score 0 to 1
  * @property {boolean} document_flagged
- */
-
-/**
- * @typedef {object} Credentials
- * @property {string} username 3 to 32 of A-Z a-z 0-9 _ -
- * @property {string} password 8 to 128 characters
- */
-
-/**
- * @typedef {object} Me
- * @property {string} username
- */
-
-/**
- * @typedef {object} CheckSummary
- * @property {number} id
- * @property {string} created_at ISO 8601, UTC
- * @property {number} document_score
- * @property {string} preview first 100 characters of the text
- */
-
-/**
- * @typedef {object} CheckOut
- * @property {number} id
- * @property {string} created_at ISO 8601, UTC
- * @property {ScoreResponse} result
  */
