@@ -5,7 +5,6 @@ from typing import Annotated
 from aivhuman.mil.infer import Scorer, ScoreResult
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from aivhuman_api.config import settings
 from aivhuman_api.gate import ScoreGate
 from aivhuman_api.schemas import ScoreRequest, ScoreResponse, SentenceScore
 
@@ -22,14 +21,13 @@ def get_gate(request: Request) -> ScoreGate:
     return gate
 
 
-def to_response(result: ScoreResult, model: str) -> ScoreResponse:
+def to_response(result: ScoreResult) -> ScoreResponse:
     """ml result -> api schema, adds sentence text so the frontend never slices"""
     sentences = [
         SentenceScore(
             text=result.text[s.start : s.end],
             start=s.start,
             end=s.end,
-            n_tokens=s.n_tokens,
             score=s.score,
             flagged=s.flagged,
             too_short=s.too_short,
@@ -37,11 +35,9 @@ def to_response(result: ScoreResult, model: str) -> ScoreResponse:
         for s in result.sentences
     ]
     return ScoreResponse(
-        model=model,
         text=result.text,
         sentences=sentences,
         document_score=result.document_score,
-        document_flagged=result.document_flagged,
     )
 
 
@@ -57,4 +53,4 @@ async def score(
         result = await gate.run(scorer.score, body.text)
     except ValueError as e:  # e.g. whitespace only, nothing to segment
         raise HTTPException(status_code=422, detail=str(e)) from e
-    return to_response(result, settings.model_dir.name)
+    return to_response(result)

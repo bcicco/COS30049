@@ -50,7 +50,7 @@ function Backdrop({ /** @type {ScoreResponse} */ result, selected }) {
       {sentences.map((s, i) => (
         <Fragment key={s.start}>
           {chars.slice(i === 0 ? 0 : sentences[i - 1].end, s.start).join('')}
-          <mark className={`${s.score >= 0.5 ? 'ai' : 'human'}${i === selected ? ' selected' : ''}`}>
+          <mark className={`${s.flagged ? 'ai' : 'human'}${i === selected ? ' selected' : ''}`}>
             {s.text}
           </mark>
         </Fragment>

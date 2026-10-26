@@ -8,11 +8,12 @@ client = TestClient(app)
 
 def test_score_maps_result() -> None:
     result = client.post("/api/score", json={"text": TEXT}).json()
-    assert result["model"] == "p5-adv"
     # sentence text is sliced server side, so the emoji doesn't shift it
     assert [s["text"] for s in result["sentences"]] == ["Hi 👋 there.", "Second one."]
     assert "caveats" not in result
     assert "contributions" not in result["sentences"][0]
+    assert {"model", "document_flagged"}.isdisjoint(result)
+    assert "n_tokens" not in result["sentences"][0]
 
 
 def test_whitespace_is_422() -> None:
