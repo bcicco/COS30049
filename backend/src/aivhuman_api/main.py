@@ -7,6 +7,7 @@ from aivhuman.mil.infer import Scorer
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from aivhuman_api import errors
 from aivhuman_api.config import settings
 from aivhuman_api.gate import ScoreGate
 from aivhuman_api.limits import BodySizeLimit
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="aivhuman API", lifespan=lifespan)
+errors.install(app)
 app.state.gate = ScoreGate(
     settings.score_workers, settings.score_queue, settings.score_wait_seconds
 )

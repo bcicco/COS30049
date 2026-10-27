@@ -49,9 +49,14 @@ main {
   line-height: 1.1;
 }
 
+.meter-wrap {
+  position: relative;
+  margin-top: auto;
+  padding: 6px 0; /* bigger hover target than the 8px bar */
+}
+
 .meter {
   height: 8px;
-  margin-top: auto;
   background: var(--meter-track);
   border-radius: 4px;
   overflow: hidden;
@@ -147,11 +152,9 @@ main {
   height: 100%;
   display: flex;
   align-items: flex-end;
-  outline: none;
 }
 
-.bin:hover,
-.bin:focus-visible {
+.bin:hover {
   background: var(--hover);
 }
 

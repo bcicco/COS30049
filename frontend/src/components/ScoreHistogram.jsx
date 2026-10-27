@@ -61,12 +61,9 @@ export default function ScoreHistogram({ /** @type {SentenceScore[]} */ sentence
               key={i}
               className="bin"
               role="img"
-              tabIndex={0}
               aria-label={`${binLabel(i)} AI: ${bin.total} sentences${bin.total ? ` (${describe(bin)})` : ''}`}
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
-              onFocus={() => setHover(i)}
-              onBlur={() => setHover(null)}
             >
               <div className="stack" style={{ height: `${(bin.total / max) * 100}%` }}>
                 {KINDS.map(
