@@ -41,6 +41,11 @@ export default function Editor({ text, onChange, result, selected, onSelect }) {
   )
 }
 
+function kindOf(s) {
+  if (s.too_short) return 'short'
+  return s.flagged ? 'ai' : 'human'
+}
+
 function Backdrop({ /** @type {ScoreResponse} */ result, selected }) {
   // Offsets are code points, Array.from splits by code point so gaps line up with them.
   const chars = Array.from(result.text)
@@ -50,7 +55,7 @@ function Backdrop({ /** @type {ScoreResponse} */ result, selected }) {
       {sentences.map((s, i) => (
         <Fragment key={s.start}>
           {chars.slice(i === 0 ? 0 : sentences[i - 1].end, s.start).join('')}
-          <mark className={`${s.flagged ? 'ai' : 'human'}${i === selected ? ' selected' : ''}`}>
+          <mark className={`${kindOf(s)}${i === selected ? ' selected' : ''}`}>
             {s.text}
           </mark>
         </Fragment>

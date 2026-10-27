@@ -207,6 +207,10 @@ mark.ai {
   background: var(--ai);
 }
 
+mark.short {
+  background: var(--short);
+}
+
 /* textarea over a backdrop of highlights. Both layers must share every
    property that affects text layout or the marks drift off the words. */
 .editor {

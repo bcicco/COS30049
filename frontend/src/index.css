@@ -6,6 +6,7 @@
   --border: #e5e4e7;
   --human: #cde2fb;
   --ai: #f8cfcf;
+  --short: #e4e3df;
   --error: #b91c1c;
   --viz-ai: #e34948;
   --viz-human: #2a78d6;
@@ -28,6 +29,7 @@
     --border: #2f2c36;
     --human: #184f95;
     --ai: #7a2e2e;
+    --short: #3d3b38;
     --error: #f87171;
     --viz-ai: #e66767;
     --viz-human: #3987e5;

@@ -53,7 +53,7 @@ function App() {
         />
         <div className="footer">
           <span>
-            <mark className="human">Human</mark> <mark className="ai">AI</mark>
+            <mark className="human">Human</mark> <mark className="ai">AI</mark> <mark className="short">Too short</mark>
           </span>
           <button type="submit" disabled={loading || !text.trim()}>
             {loading ? "Scoring..." : "Score"}
