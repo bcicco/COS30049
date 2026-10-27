@@ -277,6 +277,22 @@ textarea.editor-layer {
   margin-top: 8px;
 }
 
+.submit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.count {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.count.error {
+  color: var(--error);
+}
+
 .footer mark {
   padding: 0 6px;
 }

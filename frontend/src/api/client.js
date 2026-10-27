@@ -1,6 +1,7 @@
 /** @import { ScoreRequest, ScoreResponse } from './types' */
 
 const MESSAGES = {
+  422: 'The text could not be scored, check it is not empty or over 100,000 characters.',
   503: 'The server is busy, try again in a few seconds.',
 }
 
