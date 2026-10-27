@@ -7,6 +7,11 @@
   --human: #cde2fb;
   --ai: #f8cfcf;
   --error: #b91c1c;
+  --viz-ai: #e34948;
+  --viz-human: #2a78d6;
+  --viz-short: #8a8984;
+  --meter-track: #f8cfcf;
+  --hover: rgb(0 0 0 / 0.04);
 
   font: 16px/1.6 system-ui, 'Segoe UI', Roboto, sans-serif;
   color-scheme: light dark;
@@ -24,6 +29,11 @@
     --human: #184f95;
     --ai: #7a2e2e;
     --error: #f87171;
+    --viz-ai: #e66767;
+    --viz-human: #3987e5;
+    --viz-short: #77756f;
+    --meter-track: #4a2629;
+    --hover: rgb(255 255 255 / 0.05);
   }
 }
 

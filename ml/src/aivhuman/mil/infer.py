@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from aivhuman.features import FEATURE_NAMES
 from aivhuman.mil.calibrate import EDGES
 
-SENTENCE_POINT: Final = "FPR 1%"
+SENTENCE_POINT: Final = "p = 0.5"
 DOC_SPLIT: Final = "mage-x"  # doc threshold comes from the unseen corpus
 MAX_CHARS: Final = 100_000
 TOP_CONTRIBUTIONS: Final = 3

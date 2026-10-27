@@ -7,10 +7,191 @@ main {
   gap: 16px;
 }
 
-.score {
-  margin: 0;
-  font-size: 1.5rem;
+/* charts: meter + histogram side by side, stacked on narrow screens */
+.charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .charts {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.tile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tile-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.hero {
+  font-size: 3rem;
   font-weight: 600;
+  line-height: 1.1;
+}
+
+.meter {
+  height: 8px;
+  margin-top: auto;
+  background: var(--meter-track);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  background: var(--viz-ai);
+  border-radius: 4px;
+}
+
+.meter-scale,
+.x-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.legend {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.swatch.ai,
+.seg.ai {
+  background: var(--viz-ai);
+}
+
+.swatch.human,
+.seg.human {
+  background: var(--viz-human);
+}
+
+.swatch.short,
+.seg.short {
+  background: var(--viz-short);
+}
+
+.plot {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+}
+
+.y-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.x-axis {
+  grid-column: 2;
+  padding-top: 4px;
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px solid var(--muted);
+}
+
+/* the whole column is the hover target, not just the bar */
+.bin {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  outline: none;
+}
+
+.bin:hover,
+.bin:focus-visible {
+  background: var(--hover);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  width: 100%;
+}
+
+/* last in the DOM is the top of the column-reverse stack */
+.seg:last-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.seg {
+  min-height: 2px;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  z-index: 1;
+  transform: translate(-50%, -6px);
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  pointer-events: none;
+}
+
+.tooltip .muted {
+  color: var(--muted);
 }
 
 mark {
