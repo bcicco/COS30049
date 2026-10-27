@@ -9,9 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from aivhuman_api import errors
 from aivhuman_api.config import settings
+from aivhuman_api.db import Database
 from aivhuman_api.gate import ScoreGate
 from aivhuman_api.limits import BodySizeLimit
-from aivhuman_api.routes import health, score
+from aivhuman_api.routes import checks, health, score
 
 
 @asynccontextmanager
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.model_dir.name,
         settings.device,
     )
+    app.state.db = Database(settings.db_path)
     yield
 
 
@@ -43,3 +45,4 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api")
 app.include_router(score.router, prefix="/api")
+app.include_router(checks.router, prefix="/api")

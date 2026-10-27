@@ -23,3 +23,13 @@
  * @property {SentenceScore[]} sentences
  * @property {number} document_score 0 to 1
  */
+
+/**
+ * @typedef {object} Check
+ * @property {number} id
+ * @property {string} created_at ISO 8601, UTC
+ * @property {string} text NFC-normalised input
+ * @property {number} document_score 0 to 1
+ * @property {number} n_sentences
+ * @property {number} n_flagged
+ */

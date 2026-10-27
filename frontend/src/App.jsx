@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { scoreText } from "./api/client";
+import { useEffect, useState } from "react";
+import { listChecks, scoreText } from "./api/client";
 import "./App.css";
 import Editor from "./components/Editor";
+import History from "./components/History";
 import ScoreHistogram from "./components/ScoreHistogram";
 import ScoreMeter from "./components/ScoreMeter";
 import SentenceDetail from "./components/SentenceDetail";
@@ -15,11 +16,19 @@ function App() {
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [checks, setChecks] = useState([]);
   // highlights only line up with the exact text that was scored
   const current = result !== null && result.text === text ? result : null;
   // backend counts code points, text.length would count emoji twice
   const chars = Array.from(text).length;
   const tooLong = chars > MAX_CHARS;
+
+  // history is a nice-to-have, so a failed load just leaves the list empty
+  function refreshChecks() {
+    listChecks().then(setChecks, () => {});
+  }
+
+  useEffect(refreshChecks, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -34,6 +43,7 @@ function App() {
       setText(res.text);
       setResult(res);
       setSelected(null);
+      refreshChecks();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -82,6 +92,7 @@ function App() {
         </p>
       )}
       {error && <p className="error">{error}</p>}
+      <History checks={checks} />
     </main>
   );
 }

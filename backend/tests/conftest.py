@@ -1,12 +1,14 @@
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from aivhuman.mil.infer import ScoreResult, SentenceScore
 
+from aivhuman_api.db import Database
 from aivhuman_api.gate import ScoreGate
 from aivhuman_api.main import app
-from aivhuman_api.routes.score import get_scorer
+from aivhuman_api.routes.score import get_db, get_scorer
 
 TEXT = "Hi 👋 there. Second one."
 
@@ -50,9 +52,11 @@ class FakeScorer:
 
 
 @pytest.fixture(autouse=True)
-def fresh_app() -> Iterator[None]:
-    """Fake scorer and default gate for every test."""
+def fresh_app(tmp_path: Path) -> Iterator[None]:
+    """Fake scorer, empty database and default gate for every test."""
+    db = Database(tmp_path / "checks.db")
     app.dependency_overrides[get_scorer] = FakeScorer
+    app.dependency_overrides[get_db] = lambda: db
     app.state.gate = ScoreGate(workers=1, queue=4, wait_seconds=30)
     yield
     app.dependency_overrides.clear()

@@ -263,6 +263,37 @@ textarea.editor-layer {
   cursor: pointer;
 }
 
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.history li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.history-time {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* one line per check, long texts are cut off with an ellipsis */
+.history-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .detail {
   margin: 0;
   padding: 10px 14px;
